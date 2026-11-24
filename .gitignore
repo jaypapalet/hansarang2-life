@@ -1,0 +1,4 @@
+node_modules/
+vms-live/
+__pycache__/
+.env

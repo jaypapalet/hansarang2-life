@@ -1,0 +1,45 @@
+.rt-rail,.rt-stop{background:white;border:1px solid #d8e3df;border-radius:16px;padding:18px;color:#153b36}
+.rt-caption{font-size:.82rem;font-weight:700;color:#736136;letter-spacing:.01em}
+.rt-lane{position:relative;height:96px;margin:2px 0 8px}
+.rt-track-line{position:absolute;left:2%;right:2%;top:43px;height:4px;background:#b59c61;border-radius:2px}
+.rt-dots{position:absolute;inset:0}
+.rt-train-dot{position:absolute;top:5px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;transition:left 9s linear;z-index:2}
+.rt-train-number{min-width:34px;padding:2px 7px;border:1px solid #1b6655;border-radius:999px;background:#fff;color:#145445;font-size:.76rem;font-weight:800;line-height:1.25;text-align:center;white-space:nowrap;box-shadow:0 1px 3px rgba(15,57,49,.12)}
+.rt-train-shape{display:grid;grid-template-columns:repeat(4,7px);gap:2px;width:42px;height:15px;margin-top:3px;padding:3px 4px;border:1px solid #5c7770;border-radius:5px 5px 3px 3px;background:#eaf1ef;box-sizing:border-box;box-shadow:0 2px 0 #8ba099}
+.rt-train-shape i{display:block;height:5px;border-radius:1px;background:#7fa4b0}
+.rt-train-meta{margin-top:5px;padding:2px 5px;border-radius:5px;background:#eef5f1;color:#3e6258;font-size:.68rem;font-weight:700;line-height:1.2;white-space:nowrap}
+.rt-train-dot.is-express .rt-train-number{border-color:#c74343;background:#fff5f4;color:#c72f2f}
+.rt-train-dot.is-express .rt-train-shape{border-color:#b95050;background:#fff0ef;box-shadow:0 2px 0 #d79591}
+.rt-train-dot.is-express .rt-train-meta{background:#fff0ef;color:#b62e2e}
+.rt-stop-link{font-size:.85rem;color:#166353;text-underline-offset:3px}
+.rt-tabs{display:flex;gap:3px;width:fit-content;padding:4px;background:#edf3ef;border-radius:10px;margin-bottom:16px}
+.rt-tabs button{font:inherit;font-size:.95rem;font-weight:700;padding:6px 18px;border:0;border-radius:7px;background:transparent;color:#49655d;cursor:pointer}
+.rt-tabs button[aria-pressed=true]{background:#194f43;color:white}
+.rt-line{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));position:relative;margin:0 0 9px;text-align:center}
+.rt-line span{position:relative;font-weight:650;color:#34544c}
+.rt-line i{display:block;margin:0 auto 4px;width:10px;height:10px;border:2px solid #aa9059;background:white;border-radius:50%;box-sizing:border-box}
+.rt-line .rt-selected i{background:#866e32}
+.rt-track-line:after{content:"";position:absolute;top:-4px;width:9px;height:9px;border-top:3px solid #aa9059;border-right:3px solid #aa9059}
+.rt-lane[data-lane="down"] .rt-track-line:after{left:0;transform:rotate(-135deg)}
+.rt-lane[data-lane="up"] .rt-track-line:after{right:0;transform:rotate(45deg)}
+@media(prefers-reduced-motion:reduce){.rt-train-dot{transition:none}}
+.rt-foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;font-size:.8rem;color:#566e67;margin-top:14px}
+.rt-foot a{color:#166353;text-underline-offset:3px}
+.rt-buses,.rt-etas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.rt-stop{min-width:0}
+.rt-stop-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.rt-stop-head span{font-size:.84rem;font-weight:700;border-radius:20px;background:#e6f3ec;color:#205b4a;padding:4px 9px}
+.rt-stop-head small{font-size:.8rem;color:#547167;font-variant-numeric:tabular-nums}
+.rt-stop h3,.rt-detail h3{font-size:1rem;margin:10px 0}
+.rt-empty,.rt-etas p{color:#61746c;font-size:.9rem}
+.rt-bus-row{border-top:1px solid #e4ebe7;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0}
+.rt-bus-row>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.rt-bus-row span,.rt-bus-times small,.rt-arrival{font-size:.82rem;color:#4d655a}
+.rt-bus-times{text-align:right}
+.rt-bus-times strong,.rt-arrival strong{color:#185a46;font-size:.9rem}
+.rt-bus-no{font-size:1.1rem;color:#305684}
+.rt-b2,.rt-b4{color:#197242}
+.rt-detail{margin-top:12px;padding-top:4px;border-top:1px solid #e6ece7}
+.rt-etas>div>b{font-size:.83rem}
+.rt-arrival{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 6px;padding:6px 0;border-bottom:1px solid #edf0ee}
+@media(max-width:600px){.rt-buses{grid-template-columns:1fr}.rt-rail,.rt-stop{padding:14px}.rt-train-number{font-size:.72rem}.rt-train-meta{font-size:.64rem}}
