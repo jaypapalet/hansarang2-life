@@ -3,6 +3,7 @@ import {
   fetchBotanic, fetchCulture, fetchDistrictCulture, fetchGangseoLibrary, fetchLgArt,
   fetchNews, fetchNotices, fetchReservations, fetchSeoulLibrary,
 } from './neighborhood-sources.mjs';
+import {eventRefreshHour, readEventSnapshots, refreshEventSnapshot} from './neighborhood-event-store.mjs';
 
 const refreshMs = 3 * 60 * 60 * 1000;
 const retryMs = 10 * 60 * 1000;
@@ -155,18 +156,45 @@ export function createNeighborhoodReader({now = Date.now, loaders = defaults} = 
     return localRequests.get(id);
   }
 
-  return async function readNeighborhood(request, env, cache = globalThis.caches?.default) {
+  async function loadStoredEventSource(source, key, db, snapshots, context, wait) {
+    if (source.requiresKey && !key) return {state: 'unconfigured', updatedAt: null, checkedAt: null, entries: []};
+    const sample = source.requiresKey && key === 'sample';
+    const id = source.id + (sample ? '/sample' : '/live');
+    const currentTime = now();
+    const hour = eventRefreshHour(currentTime);
+    let snapshot = snapshots.get(id);
+    if ((snapshot?.checkedAt == null || snapshot.checkedAt < hour) && (snapshot?.leaseUntil ?? 0) <= currentTime) {
+      const refresh = refreshEventSnapshot(db, id, () => loaders[source.id](key), now).catch(() => snapshot);
+      if (!wait && typeof context?.waitUntil === 'function' && snapshot?.updatedAt != null) context.waitUntil(refresh);
+      else snapshot = await refresh;
+    }
+    const checkedAt = snapshot?.checkedAt ?? null;
+    const updatedAt = snapshot?.updatedAt ?? null;
+    if (updatedAt === null || currentTime - updatedAt >= retentionMs) {
+      return {state: 'unavailable', updatedAt: null, checkedAt, entries: []};
+    }
+    const state = snapshot.failed || checkedAt < hour ? 'stale' : sample ? 'limited' : 'fresh';
+    return {state, updatedAt, checkedAt, entries: JSON.parse(snapshot.entries)};
+  }
+
+  return async function readNeighborhood(request, env, cache = globalThis.caches?.default, context) {
     const key = env.TOPIS_OPEN_DATA_KEY?.trim() || env.SEOUL_OPEN_DATA_KEY?.trim();
-    const section = new URL(request.url).searchParams.get('section');
+    const params = new URL(request.url).searchParams;
+    const section = params.get('section');
+    const wait = params.get('wait') === '1';
     const selected = section ? sources.filter(source => source.kind === section) : sources;
+    const snapshots = env.DB && section !== 'notices' ? await readEventSnapshots(env.DB) : null;
     const results = await Promise.all(selected.map(async source => ({
       ...source,
-      ...await loadSource(source, request, key, cache),
+      ...await (snapshots && source.kind === 'events'
+        ? loadStoredEventSource(source, key, env.DB, snapshots, context, wait)
+        : loadSource(source, request, key, cache)),
     })));
     return {
       events: mergeEvents(results.filter(source => source.kind === 'events').map(source => source.entries)),
       notices: results.filter(source => source.kind === 'notices').flatMap(source => source.entries).sort(newestPostFirst),
-      sources: results.map(({id, name, url, state, updatedAt}) => ({id, name, url, state, updatedAt})),
+      sources: results.map(({id, name, url, state, updatedAt, checkedAt}) => ({id, name, url, state, updatedAt, checkedAt})),
+      ...(snapshots ? {storage: 'd1'} : {}),
     };
   };
 }

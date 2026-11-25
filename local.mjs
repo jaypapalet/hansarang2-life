@@ -19,7 +19,9 @@ const server=http.createServer(async(req,res)=>{
       options.body=Readable.toWeb(req);
       options.duplex='half';
     }
-    const response=await worker.fetch(new Request(url,options),env);
+    const response=await worker.fetch(new Request(url,options),env,{
+      waitUntil(job) { void job.catch(()=>console.error('Background refresh failed')); },
+    });
     res.writeHead(response.status,Object.fromEntries(response.headers));
     res.end(Buffer.from(await response.arrayBuffer()));
   }catch{res.writeHead(500);res.end()}

@@ -99,11 +99,12 @@ export function BusArrivals() {
           <div className="bus-stops">
             {stops.map(stop => <StopArrivals key={`${stop.id}:${query}`} stop={stop} headingId={`${id}-stop-${stop.id}`} searching={Boolean(query)} loading={!data && !failed} />)}
           </div>
-          <div className="bus-source">
-            <a href="https://topis.seoul.go.kr/map/openBusMap.do" target="_blank" rel="noopener noreferrer">TOPIS 실시간 도착 정보<span className="sr-only"> (새 탭)</span></a>
-          </div>
         </div>
       ))}
+      <details className="source-details bus-source">
+        <summary>버스 정보 출처</summary>
+        <a href="https://topis.seoul.go.kr/map/openBusMap.do" target="_blank" rel="noopener noreferrer">TOPIS 실시간 도착 정보<span className="sr-only"> (새 탭)</span></a>
+      </details>
     </section>
   );
 }
@@ -116,12 +117,22 @@ function StopArrivals({ stop, headingId, searching, loading }: {
     : searching ? '검색 결과가 없습니다.' : '도착정보가 없습니다.';
   const ranked = rankArrivals(stop.routes);
   const first = ranked.filter(arrival => Number.isFinite(arrival.seconds)).slice(0, initialArrivalCount);
-  const remaining = ranked.slice(first.length);
+  const shown = new Set(first);
+  const nextArrivals = new Map<Route, BusArrival>();
+  for (const arrival of first) {
+    if (arrival.upcoming) continue;
+    const next = ranked.find(item => item.route === arrival.route && item.upcoming);
+    if (next && !shown.has(next)) {
+      nextArrivals.set(arrival.route, next);
+      shown.add(next);
+    }
+  }
+  const remaining = ranked.filter(arrival => !shown.has(arrival));
   return (
     <section className="bus-stop" aria-labelledby={headingId}>
       <div className="bus-stop-meta"><span>{stop.direction}</span><span>ARS {stop.id}</span></div>
       <h3 id={headingId}>{stop.name}</h3>
-      {first.length > 0 ? <BusArrivalRows arrivals={first} /> : <p className="secondary bus-empty">{ranked.length ? '도착 예정 시간이 없습니다.' : empty}</p>}
+      {first.length > 0 ? <BusArrivalRows arrivals={first} nextArrivals={nextArrivals} /> : <p className="secondary bus-empty">{ranked.length ? '도착 예정 시간이 없습니다.' : empty}</p>}
       {remaining.length > 0 && <details className="bus-more">
         <summary>나머지 {remaining.length}건 보기</summary>
         <BusArrivalRows arrivals={remaining} />
@@ -130,12 +141,17 @@ function StopArrivals({ stop, headingId, searching, loading }: {
   );
 }
 
-function BusArrivalRows({ arrivals }: { arrivals: BusArrival[] }) {
+function BusArrivalRows({ arrivals, nextArrivals }: { arrivals: BusArrival[]; nextArrivals?: Map<Route, BusArrival> }) {
   return <ul className="bus-routes" role="list">
-    {arrivals.map(({ route, message, upcoming }, index) => <li key={`${route.name}-${upcoming}-${index}`}>
-      <div className="bus-route"><strong data-color={['3', '6'].includes(route.type) ? 'blue' : 'green'}>{route.name}</strong>
-        <span>{route.direction || route.next ? `${route.direction || route.next} 방면` : '방면 정보 없음'}</span></div>
-      <div className="bus-times"><strong>{message}</strong>{upcoming && <span>다음 버스</span>}</div>
-    </li>)}
+    {arrivals.map(({ route, message, upcoming }, index) => {
+      const next = nextArrivals?.get(route);
+      return <li key={`${route.name}-${upcoming}-${index}`}>
+        <div className="bus-route"><strong data-color={['3', '6'].includes(route.type) ? 'blue' : 'green'}>{route.name}</strong>
+          <span>{route.direction || route.next ? `${route.direction || route.next} 방면` : '방면 정보 없음'}</span></div>
+        <div className="bus-times"><strong>{message}</strong>{upcoming && <span>다음 버스</span>}
+          {next && <span className="bus-next">다음 {next.message}</span>}
+        </div>
+      </li>;
+    })}
   </ul>;
 }

@@ -100,8 +100,11 @@ export function Weather() {
         <h2 id="weather-daily-title">일자별 예보</h2>
         {days.length ? <ul className="day-forecast" role="list">{days.map(day => <DayForecast key={day.date} day={day} today={today} />)}</ul>
           : <p className="secondary">{forecastStatus}</p>}
-        {current && <p className="forecast-source">날씨 데이터 <a href={current.source === 'Open-Meteo' ? 'https://open-meteo.com/' : 'https://www.weather.go.kr/'}>{current.source}</a></p>}
       </section>
+      {current && <details className="source-details forecast-source">
+        <summary>날씨 정보 출처</summary>
+        <p>날씨 데이터 <a href={current.source === 'Open-Meteo' ? 'https://open-meteo.com/' : 'https://www.weather.go.kr/'}>{current.source}</a></p>
+      </details>}
     </div>
   </>;
 }

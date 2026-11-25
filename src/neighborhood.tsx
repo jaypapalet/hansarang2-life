@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { ArrowUpRight, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ArrowUpRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import './neighborhood.css';
 
 type DateRange = { start: string; end: string };
@@ -188,24 +188,26 @@ function EventItem({ event, month, showDates = false, unconfirmed = false, close
   </li>;
 }
 
-function SourceNotes({ sources, section, failed }: { sources: Source[]; section: Section; failed: boolean }) {
+function SourceNotes({ sources, section, failed, loading }: { sources: Source[]; section: Section; failed: boolean; loading: boolean }) {
   const definitions = officialSources.filter(source => source.section === section);
   const states: Record<Source['state'], string> = {
     fresh: '', stale: '이전 정보 · 새 소식 확인 필요', unavailable: '현재 불러올 수 없음',
     unconfigured: '공식 사이트에서 확인', limited: section === 'events' ? '일부 일정만 확인됨' : '일부 게시물만 확인됨',
   };
-  return <div className="nb-sources" aria-label="공식 출처와 확인 시각">
-    <p className="nb-source-heading">공식 출처</p>
+  const title = section === 'events' ? '행사 일정' : '구청 소식';
+  return <div className="nb-sources" aria-label={`${title} 공식 출처와 확인 시각`}>
+    <h3 className="nb-source-heading">{title}</h3>
     <ul>
       {definitions.map(definition => {
         const source = sources.find(item => item.id === definition.id);
         const state = failed ? (source ? 'stale' : 'unavailable') : source?.state ?? 'unconfigured';
         const updated = source?.updatedAt;
         const hasUpdated = typeof updated === 'number' && Number.isFinite(updated);
+        const status = loading && !source ? '확인 중' : states[state];
         return <li key={definition.id}>
           <OfficialLink url={officialUrl(source?.url) ?? definition.url}>{source?.name || definition.name}</OfficialLink>
           {hasUpdated && <time dateTime={new Date(updated).toISOString()}>{updatedFormatter.format(updated)} 확인</time>}
-          {states[state] && <span className="nb-source-state">{states[state]}</span>}
+          {status && <span className="nb-source-state">{status}</span>}
         </li>;
       })}
     </ul>
@@ -216,7 +218,6 @@ function useNeighborhoodData(section: Section) {
   const [data, setData] = useState<NeighborhoodData | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -247,25 +248,22 @@ function useNeighborhoodData(section: Section) {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [retry, section]);
+  }, [section]);
 
-  return { data, loading, failed, refresh: () => setRetry(value => value + 1) };
+  return { data, loading, failed };
 }
 
 function SectionHeading({ id, title, request }: {
   id: string; title: string; request: ReturnType<typeof useNeighborhoodData>;
 }) {
-  const { data, loading, failed, refresh } = request;
+  const { data, loading, failed } = request;
   return <>
-    <div className="section-heading nb-heading">
+    <div className="section-heading">
       <h2 id={id}>{title}</h2>
-      <button className="nb-refresh" type="button" onClick={refresh} disabled={loading}>
-        <RefreshCw size={15} aria-hidden="true" />{loading ? '확인 중' : failed ? '다시 시도' : '새로 확인'}
-      </button>
     </div>
     {loading && <p className="nb-load" role="status">{title}을 불러오는 중입니다.</p>}
     {failed && <p className="nb-load nb-error" role="alert">
-      {data ? '새로 불러오지 못했습니다. 이전 정보를 표시합니다.' : '불러오지 못했습니다. 다시 시도하거나 아래 공식 출처를 확인해 주세요.'}
+      {data ? '새로 불러오지 못했습니다. 이전 정보를 표시합니다.' : '불러오지 못했습니다. 아래 공식 출처를 펼쳐 최신 정보를 확인해 주세요.'}
     </p>}
   </>;
 }
@@ -425,7 +423,6 @@ export function Neighborhood() {
         </section>
       </div>
       <p className="sr-only" role="status">{!eventRequest.loading ? `${year}년 ${monthNumber}월, ${view === 'calendar' ? `${dayLabel(selected)} 확정 일정 ${counts.get(selected) ?? 0}건` : `일정 ${monthEvents.length}건`}` : ''}</p>
-      {(!eventRequest.loading || eventRequest.data) && <SourceNotes sources={eventRequest.data?.sources ?? []} section="events" failed={eventRequest.failed} />}
     </section>
 
     <section className="nb-board" aria-labelledby={`${id}-board-title`}>
@@ -451,7 +448,6 @@ export function Neighborhood() {
           <span className="nb-post-kind">{notice.kind === 'notice' ? '공지' : '뉴스'}</span>
           <div className="nb-post-content">
             <OfficialLink url={notice.url} label={`${notice.title} 원문`}>{notice.title}</OfficialLink>
-            <p className="nb-post-source">{notice.kind === 'notice' ? '강서구청 공식 공지' : '강서구청 · 강서까치뉴스'}</p>
           </div>
           {validDate(notice.publishedOn) ? <time dateTime={notice.publishedOn}>{notice.publishedOn.replaceAll('-', '.')}</time> : <span className="nb-post-date">게시일 확인 필요</span>}
         </li>)}</ul>}
@@ -470,7 +466,13 @@ export function Neighborhood() {
         </button>
       </nav>}
       <p className="sr-only" role="status">{!noticeRequest.loading ? `${terms.length ? '검색 결과' : '게시물'} ${notices.length}건${pageCount > 1 ? `, ${pageCount}페이지 중 ${visiblePage}페이지` : ''}` : ''}</p>
-      {(!noticeRequest.loading || noticeRequest.data) && <SourceNotes sources={noticeRequest.data?.sources ?? []} section="notices" failed={noticeRequest.failed} />}
     </section>
+    <details className="source-details nb-source-details">
+      <summary>공식 출처와 확인 상태</summary>
+      <div className="nb-source-groups">
+        <SourceNotes sources={eventRequest.data?.sources ?? []} section="events" failed={eventRequest.failed} loading={eventRequest.loading} />
+        <SourceNotes sources={noticeRequest.data?.sources ?? []} section="notices" failed={noticeRequest.failed} loading={noticeRequest.loading} />
+      </div>
+    </details>
   </div>;
 }
