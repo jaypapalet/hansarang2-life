@@ -151,7 +151,21 @@ function reservationTime(value: string | null) {
   return Number.isFinite(date.getTime()) ? reservationFormatter.format(date) : null;
 }
 
-function EventItem({ event, month, showDates = false, unconfirmed = false }: { event: NeighborhoodEvent; month: string; showDates?: boolean; unconfirmed?: boolean }) {
+const closedRegistrationStatuses = new Set([
+  'closed', 'ended', 'full', 'soldout', '마감', '접수마감', '신청마감', '예약마감', '예매마감',
+  '모집마감', '정원마감', '접수종료', '예약종료', '신청종료',
+]);
+
+function registrationClosed(event: NeighborhoodEvent, now: number) {
+  const reservation = event.reservation;
+  if (!reservation) return false;
+  const status = reservation.status?.normalize('NFKC').toLowerCase().replace(/[\s_-]/g, '') ?? '';
+  return closedRegistrationStatuses.has(status) || Date.parse(reservation.closesAt ?? '') <= now;
+}
+
+function EventItem({ event, month, showDates = false, unconfirmed = false, closed = false }: {
+  event: NeighborhoodEvent; month: string; showDates?: boolean; unconfirmed?: boolean; closed?: boolean;
+}) {
   const range = usableRange(event.range);
   const service = usableRange(event.servicePeriod);
   const reservation = event.reservation;
@@ -165,7 +179,7 @@ function EventItem({ event, month, showDates = false, unconfirmed = false }: { e
     {!showDates && range && <p className="nb-meta">안내 기간 {periodLabel(range)}</p>}
     {unconfirmed && service && <p className="nb-meta">예약 페이지의 이용기간 {periodLabel(service)} · 실제 진행일은 공식 안내에서 확인해 주세요.</p>}
     {unconfirmed && !service && <p className="nb-meta">실제 진행일은 공식 안내에서 확인해 주세요.</p>}
-    {reservation && <p className="nb-reservation">{reservationStatus(reservation)}</p>}
+    {reservation && <p className="nb-reservation">{closed ? '접수 마감' : reservationStatus(reservation)}</p>}
     {(opens || closes) && <p className="nb-meta">예약 접수 {opens && `${opens}부터`}{opens && closes ? ' ' : ''}{closes && `${closes}까지`}</p>}
     <div className="nb-event-links">
       <OfficialLink url={event.url} label={`${event.title} 공식 안내`}>공식 안내</OfficialLink>
@@ -291,11 +305,20 @@ export function Neighborhood() {
     const firstDate = (event: NeighborhoodEvent) => exactDates(event).find(date => date.startsWith(month)) ?? usableRange(event.range)?.start ?? usableRange(event.servicePeriod)?.start ?? '9999';
     return firstDate(a).localeCompare(firstDate(b)) || a.title.localeCompare(b.title, 'ko');
   }), [events, month]);
-  const selectedEvents = monthEvents.filter(event => exactDates(event).includes(selected));
-  const periodEvents = monthEvents.filter(event => usableRange(event.range) && !exactDates(event).some(date => date.startsWith(month)));
-  const unconfirmedEvents = monthEvents.filter(event => !exactDates(event).length && !usableRange(event.range));
-  const monthDatedEvents = monthEvents.filter(event => exactDates(event).length || usableRange(event.range));
+  const now = Date.now();
+  const closedIds = new Set(monthEvents.filter(event => registrationClosed(event, now)).map(event => event.id));
+  const otherEvents = monthEvents.filter(event => !closedIds.has(event.id));
+  const selectedEvents = otherEvents.filter(event => exactDates(event).includes(selected));
+  const periodEvents = otherEvents.filter(event => usableRange(event.range) && !exactDates(event).some(date => date.startsWith(month)));
+  const unconfirmedEvents = otherEvents.filter(event => !exactDates(event).length && !usableRange(event.range));
+  const monthDatedEvents = otherEvents.filter(event => exactDates(event).length || usableRange(event.range));
   const visibleEvents = view === 'calendar' ? selectedEvents : monthDatedEvents;
+  const closedEvents = monthEvents.filter(event => {
+    if (!closedIds.has(event.id)) return false;
+    if (view === 'list') return true;
+    const dates = exactDates(event);
+    return dates.includes(selected) || !dates.some(date => date.startsWith(month));
+  });
   const counts = new Map<string, number>();
   monthEvents.forEach(event => exactDates(event).filter(date => date.startsWith(month)).forEach(date => counts.set(date, (counts.get(date) ?? 0) + 1)));
   const firstWeekday = asDate(bounds.start).getUTCDay();
@@ -378,7 +401,7 @@ export function Neighborhood() {
         <section className="nb-agenda" aria-labelledby={`${id}-agenda`}>
           <h3 id={`${id}-agenda`}>{view === 'calendar' ? `${dayLabel(selected)} 일정` : `${monthNumber}월 일정`}</h3>
           {visibleEvents.length > 0 && <ul className="nb-event-list">{visibleEvents.map(event => <EventItem key={event.id} event={event} month={month} showDates={view === 'list'} />)}</ul>}
-          {!visibleEvents.length && (!eventRequest.loading || eventRequest.data) && <p className="nb-empty">{eventRequest.failed && !eventRequest.data ? '공식 사이트에서 일정을 확인해 주세요.' : view === 'calendar' ? '이 날짜에 확인된 일정이 없습니다.' : '이 달에 확인된 일정이 없습니다.'}</p>}
+          {!visibleEvents.length && !closedEvents.length && (!eventRequest.loading || eventRequest.data) && <p className="nb-empty">{eventRequest.failed && !eventRequest.data ? '공식 사이트에서 일정을 확인해 주세요.' : view === 'calendar' ? '이 날짜에 확인된 일정이 없습니다.' : '이 달에 확인된 일정이 없습니다.'}</p>}
           {view === 'calendar' && periodEvents.length > 0 && <div className="nb-extra-events">
             <h4>이달의 기간 행사·전시</h4>
             <p className="nb-meta">운영일과 관람 시간은 공식 안내를 확인해 주세요.</p>
@@ -388,9 +411,20 @@ export function Neighborhood() {
             <h4>일정 확인 필요</h4>
             <ul className="nb-event-list">{unconfirmedEvents.map(event => <EventItem key={event.id} event={event} month={month} unconfirmed />)}</ul>
           </div>}
+          {closedEvents.length > 0 && <details className="nb-closed-events" key={view === 'calendar' ? selected : month}>
+            <summary>
+              <span>접수 마감 {closedEvents.length}건</span>
+              <span className="nb-closed-expand">펼치기</span>
+              <span className="nb-closed-collapse">접기</span>
+            </summary>
+            <ul className="nb-event-list">
+              {closedEvents.map(event => <EventItem key={event.id} event={event} month={month} closed showDates
+                unconfirmed={!exactDates(event).length && !usableRange(event.range)} />)}
+            </ul>
+          </details>}
         </section>
       </div>
-      <p className="sr-only" role="status">{!eventRequest.loading ? `${year}년 ${monthNumber}월, ${view === 'calendar' ? `${dayLabel(selected)} 확정 일정 ${selectedEvents.length}건` : `일정 ${monthEvents.length}건`}` : ''}</p>
+      <p className="sr-only" role="status">{!eventRequest.loading ? `${year}년 ${monthNumber}월, ${view === 'calendar' ? `${dayLabel(selected)} 확정 일정 ${counts.get(selected) ?? 0}건` : `일정 ${monthEvents.length}건`}` : ''}</p>
       {(!eventRequest.loading || eventRequest.data) && <SourceNotes sources={eventRequest.data?.sources ?? []} section="events" failed={eventRequest.failed} />}
     </section>
 

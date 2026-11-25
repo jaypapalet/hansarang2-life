@@ -24,13 +24,15 @@ npm start
 | 호스팅 | ChatGPT Sites. 기존 프로젝트 ID는 `.openai/hosting.json`에 있다. |
 | 도로 정보 | 지정 경로는 OSRM 기준 경로와 TOPIS 구간 속도를 쓴다. 목적지는 카카오맵에서 찾고 카카오모빌리티로 거리와 소요 시간을 조회한다. [도로 전광판 상세](ROADS.md) |
 
-오늘 탭에서는 등촌1동 현재 날씨와 시간대별·일자별 예보, 증미역·등촌역 열차 도착 정보를 조회한다. 버스는 서울시 정류소 API에서 받아오며 조회가 지연될 때 TOPIS 링크를 표시한다. 로컬 서버는 실행 중 도로 전광판의 지정 경로를 10분 간격으로 갱신한다. Sites Worker는 요청을 받을 때 10분이 지난 값을 갱신한다.
+오늘 탭에서는 등촌1동 현재 날씨와 시간대별·일자별 예보, 증미역·등촌역 열차 도착 정보를 조회한다. 버스는 서울시 정류소 API를 우선 조회한다. 공식 조회가 실패하거나 키가 없으면 정류장별로 Makka의 공개 도착 정보를 사용한다. 로컬 서버는 실행 중 도로 전광판의 지정 경로를 10분 간격으로 갱신한다. Sites Worker는 요청을 받을 때 10분이 지난 값을 갱신한다.
 
 ### 동네 소식
 
 동네 소식 탭에서 행사 일정과 구청 소식을 확인한다. 게시판에서 최근에 수집한 공지·까치뉴스의 제목을 검색할 수 있다. 서버가 [서울시 문화행사](https://data.seoul.go.kr/dataList/OA-15486/S/1/datasetView.do), [강서구 문화행사 예약](https://data.seoul.go.kr/dataList/OA-12171/S/1/datasetView.do), [서울식물원 행사 공지](https://botanicpark.seoul.go.kr/front/board/newsView.do?sn=20821)를 읽는다. 예약 이용기간만 있는 행사는 목록에 두고, 확인된 운영일에만 달력에 표시한다.
 
 [강서구 문화시설](https://culture.gangseo.seoul.kr/gsfc/culture/calendar.do?menuNo=800038), [LG아트센터 서울](https://www.lgart.com/product/performance/year), [강서구립도서관](https://lib.gangseo.seoul.kr/ApplyForParticipate), [서울시교육청 강서도서관](https://gslib.sen.go.kr/gslib/module/teach/index.do?menu_idx=15&searchCate1=16)의 공개 일정도 읽는다. 이 출처는 지난달부터 다음 달까지의 일정을 가져온다. 회차가 확인된 공연과 날짜가 확정된 프로그램은 달력에 표시한다. 전시처럼 운영 기간을 안내하는 경우에는 기간 목록과 공식 링크를 표시한다.
+
+접수가 끝난 행사는 달력과 월별 목록 아래의 **접수 마감**에서 펼쳐 볼 수 있다.
 
 구청 공지·까치뉴스와 서울식물원 공식 공지는 키 없이 조회한다. 서울시 문화행사와 강서구 문화행사 예약은 도로 정보에 쓰는 `TOPIS_OPEN_DATA_KEY`를 함께 쓴다. 서버는 출처별로 3시간 동안 조회한 데이터를 재사용한다. 3시간이 지나면 다음 요청에서 새로 확인하며, 실패한 출처는 저장해 둔 최근 데이터를 함께 표시한다. 주민이 방문하지 않는 동안 갱신하려면 배포 후 예약 실행을 별도로 연결한다.
 
