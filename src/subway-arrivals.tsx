@@ -1,11 +1,11 @@
-import { useLiveData } from './live-data';
+import { seoulTime, useLiveData } from './live-data';
 
 type Direction = 'up' | 'down';
 type Train = {
   station: string; direction: Direction; destination: string; train: string;
   express: boolean; due: number | null; observed: number; message: string;
 };
-type SubwayData = { arrivals: Train[]; failedStations: string[] };
+type SubwayData = { arrivals: Train[]; failedStations: string[]; fetchedAt: number };
 const stations = ['증미', '등촌'];
 const directions = [
   { id: 'up', name: '중앙보훈병원' },
@@ -39,9 +39,16 @@ export function SubwayArrivals() {
   const now = Date.now();
   const arrivals = failed ? [] : (data?.arrivals ?? []).filter(row => !row.express && now - row.observed <= 180_000
     && row.observed - now <= 30_000 && (row.due == null || row.due >= now - 15_000));
+  const checkedAt = data && Number.isFinite(data.fetchedAt) ? new Date(data.fetchedAt) : null;
+  const allUnavailable = data && stations.every(station => data.failedStations.includes(station));
 
   return <section className="subway" aria-labelledby="subway-title">
-    <h2 id="subway-title">지하철 도착 정보</h2>
+    <div className="section-heading">
+      <h2 id="subway-title">지하철 도착 정보</h2>
+      {checkedAt && <p className="secondary">
+        {failed ? '이전 조회' : allUnavailable ? '마지막 시도' : '조회'} <time dateTime={checkedAt.toISOString()}>{seoulTime.format(checkedAt)}</time>
+      </p>}
+    </div>
     <div className="stations">
       {stations.map(station => <section key={station} className="station" aria-label={`${station}역`}>
         <h3>{station}역</h3>
