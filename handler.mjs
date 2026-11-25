@@ -17,7 +17,8 @@ export default {
       return privateResponse(await modules['roads.mjs'].kakaoRoads(path.split('/').at(-1),request,env,roadPlaces.origin));
     }
     if(!['GET','HEAD'].includes(request.method))return privateResponse(new Response(null,{status:405,headers:{Allow:'GET, HEAD'}}));
-    if(path==='/api/roads/fixed')return privateResponse(await modules['roads.mjs'].fixedRoads(request,env,roadRoutes));
+    if(path.startsWith('/api/boards/'))return privateResponse(await modules['boards.mjs'].boards(request,env));
+    if(path==='/api/roads/fixed')return privateResponse(await modules['roads.mjs'].fixedRoads(request,env,roadRoutes,roadPlaces));
     if(path==='/api/neighborhood'){
       const headers={'Cache-Control':'no-store','Content-Type':'application/json; charset=utf-8'};
       const section=url.searchParams.get('section');
