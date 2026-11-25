@@ -81,28 +81,40 @@ async function queryTopis(routes, key) {
   return speeds;
 }
 
-async function refreshTopis(routes, key, previous) {
-  const speeds = await queryTopis(routes, key);
+async function refreshFixed(routes, topisKey, kakaoKey, places, previous) {
+  const speeds = topisKey ? await queryTopis(routes, topisKey) : new Map();
+  const topisRoutes = speeds.size ? estimateRoutes(routes, speeds).filter(route => route.coverage > 0) : [];
+  const topisById = new Map(topisRoutes.map(route => [route.id, route]));
+  const missing = places?.destinations.filter(destination => !topisById.has(destination.id)) ?? [];
+  const kakaoRoutes = kakaoKey && missing.length ? await kakaoFixed(kakaoKey, places.origin, missing) : [];
   const checkedAt = Date.now();
-  if (speeds.size) return {checkedAt, updatedAt: checkedAt, routes: estimateRoutes(routes, speeds)};
-  if (previous?.updatedAt && checkedAt - previous.updatedAt < retentionMs) return {...previous, checkedAt};
-  return {checkedAt, updatedAt: null, routes: estimateRoutes(routes, new Map())};
+  const fresh = [
+    ...topisRoutes.map(route => ({...route, source: 'topis', updatedAt: checkedAt})),
+    ...kakaoRoutes.map(route => ({...route, source: 'kakao', updatedAt: checkedAt})),
+  ];
+  const freshIds = new Set(fresh.map(route => route.id));
+  const retained = (previous?.routes ?? []).filter(route =>
+    !freshIds.has(route.id) && route.updatedAt && checkedAt - route.updatedAt < retentionMs);
+  const available = [...fresh, ...retained];
+  return {checkedAt, updatedAt: available.length ? Math.max(...available.map(route => route.updatedAt)) : null, routes: available};
 }
 
-export async function fixedRoads(request, env, routes) {
-  const key = env.TOPIS_OPEN_DATA_KEY?.trim();
-  if (!key) return json({error: 'topis_not_configured'}, 503);
+export async function fixedRoads(request, env, routes, places) {
+  const topisKey = env.TOPIS_OPEN_DATA_KEY?.trim();
+  const kakaoKey = env.KAKAO_MOBILITY_REST_API_KEY?.trim();
+  if (!topisKey && !kakaoKey) return json({error: 'road_provider_not_configured'}, 503);
+  const refresh = previous => refreshFixed(routes, topisKey, kakaoKey, places, previous);
 
   const cache = globalThis.caches?.default;
   if (cache) {
-    const cacheKey = new Request(new URL('/__topis_snapshot_v1', request.url));
+    const cacheKey = new Request(new URL('/__road_snapshot_v2', request.url));
     let previous;
     try {
       previous = await (await cache.match(cacheKey))?.json();
     } catch { /* The source can still be queried when the cache is unavailable. */ }
     const snapshot = previous && Date.now() - previous.checkedAt < refreshInterval
       ? previous
-      : await refreshTopis(routes, key, previous);
+      : await refresh(previous);
     if (snapshot !== previous) {
       try {
         await cache.put(cacheKey, Response.json(snapshot, {headers: {'Cache-Control': 'public, max-age=3600'}}));
@@ -112,7 +124,7 @@ export async function fixedRoads(request, env, routes) {
   }
 
   if (localSnapshot && Date.now() < localRetryAfter) return json(localSnapshot);
-  localRefresh ??= refreshTopis(routes, key, localSnapshot).then(snapshot => {
+  localRefresh ??= refresh(localSnapshot).then(snapshot => {
     localSnapshot = snapshot;
     localRetryAfter = snapshot.checkedAt + refreshInterval;
     return snapshot;
@@ -140,29 +152,75 @@ function takeRequest(kind, ip) {
   return true;
 }
 
-async function kakao(url, key) {
-  const response = await fetch(url, {
-    headers: {Authorization: `KakaoAK ${key}`, Accept: 'application/json'},
-    redirect: 'error',
-    signal: AbortSignal.timeout(7000),
-    cache: 'no-store',
-  });
-  if (response.status === 429) return {error: 'quota_exceeded', status: 429};
-  if (response.status === 401 || response.status === 403) return {error: 'kakao_access', status: 503};
-  const data = JSON.parse(await readText(response, 65536));
-  if (data?.code === -10) return {error: 'quota_exceeded', status: 429};
-  if (!response.ok) return {error: 'kakao_unavailable', status: 502};
+async function kakao(url, key, payload) {
+  let response;
+  try {
+    response = await fetch(url.href, {
+      headers: {Authorization: `KakaoAK ${key}`, Accept: 'application/json', 'Cache-Control': 'no-cache, no-store',
+        ...(payload ? {'Content-Type': 'application/json'} : {})},
+      ...(payload ? {method: 'POST', body: JSON.stringify(payload)} : {}),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(7000),
+    });
+  } catch (error) {
+    const message = String(error?.message ?? '');
+    const detail = /timeout|timed out/i.test(message) || error?.name === 'TimeoutError' ? 'timeout'
+      : /dns|resolve|name not known/i.test(message) ? 'dns'
+        : /tls|ssl|certificate/i.test(message) ? 'tls'
+          : /denied|blocked|allowlist|not allowed/i.test(message) ? 'blocked'
+            : /connect|network|socket/i.test(message) ? 'network' : 'exception';
+    return {error: 'kakao_unavailable', status: 502, diagnostic: 'fetch-' + detail};
+  }
+  const http = 'http-' + response.status;
+  if (response.status === 429) return {error: 'quota_exceeded', status: 429, diagnostic: http};
+  if (response.status === 401 || response.status === 403) return {error: 'kakao_access', status: 503, diagnostic: http};
+  let data;
+  try {
+    data = JSON.parse(await readText(response, 65536));
+  } catch (error) {
+    const content = response.headers.get('Content-Type')?.toLowerCase() ?? '';
+    const detail = error?.message === 'body_too_large' ? 'body-limit'
+      : content.includes('html') ? 'html' : content.includes('json') ? 'json' : 'other';
+    return {error: 'kakao_unavailable', status: 502, diagnostic: http + '-' + detail};
+  }
+  if (data?.code === -10) return {error: 'quota_exceeded', status: 429, diagnostic: http + '-quota'};
+  if (!response.ok) return {error: 'kakao_unavailable', status: 502, diagnostic: http + '-json'};
   return {data};
 }
 
-async function findPlaces(body, key, origin) {
+async function kakaoFixed(key, origin, destinations) {
+  const url = new URL('https://apis-navi.kakaomobility.com/v1/destinations/directions');
+  const {data} = await kakao(url, key, {
+    origin: {x: origin.lon, y: origin.lat},
+    destinations: destinations.map(place => ({key: place.id, x: place.lon, y: place.lat})),
+    radius: 10000,
+  });
+  const ids = new Set(destinations.map(place => place.id));
+  if (!Array.isArray(data?.routes)) return [];
+  return data.routes.flatMap(route => {
+    if (route?.result_code !== 0 || !ids.has(route.key)) return [];
+    const {distance, duration} = route.summary ?? {};
+    if (!Number.isFinite(distance) || !Number.isFinite(duration) || distance <= 0 || duration <= 0) return [];
+    ids.delete(route.key);
+    return [{id: route.key, meters: distance, seconds: duration}];
+  });
+}
+
+function kakaoFailure({error, status, diagnostic}, diagnostics) {
+  return json({error}, status, diagnostics ? {'X-Road-Upstream-Diagnostic': diagnostic} : {});
+}
+
+async function findPlaces(body, key, origin, diagnostics) {
   const query = typeof body.query === 'string' ? body.query.trim() : '';
   if (query.length < 2 || query.length > 80) return json({error: 'invalid_query'}, 400);
   const url = new URL('https://dapi.kakao.com/v2/local/search/keyword.json');
   url.search = new URLSearchParams({query, size: '6', x: String(origin.lon), y: String(origin.lat)});
-  const {data, error, status} = await kakao(url, key);
-  if (error) return json({error}, status);
-  if (!Array.isArray(data?.documents)) return json({error: 'kakao_unavailable'}, 502);
+  const result = await kakao(url, key);
+  if (result.error) return kakaoFailure(result, diagnostics);
+  const {data} = result;
+  if (!Array.isArray(data?.documents)) {
+    return kakaoFailure({error: 'kakao_unavailable', status: 502, diagnostic: 'search-shape'}, diagnostics);
+  }
   const places = data.documents.slice(0, 6).flatMap(place => {
     const lat = Number(place?.y);
     const lon = Number(place?.x);
@@ -177,7 +235,7 @@ async function findPlaces(body, key, origin) {
   return json({places});
 }
 
-async function findDirections(body, key, origin) {
+async function findDirections(body, key, origin, diagnostics) {
   const {lat, lon} = body;
   if (!inKorea(lat, lon)) return json({error: 'invalid_destination'}, 400);
   const url = new URL('https://apis-navi.kakaomobility.com/v1/directions');
@@ -187,13 +245,14 @@ async function findDirections(body, key, origin) {
     priority: 'RECOMMEND',
     summary: 'true',
   });
-  const {data, error, status} = await kakao(url, key);
-  if (error) return json({error}, status);
+  const result = await kakao(url, key);
+  if (result.error) return kakaoFailure(result, diagnostics);
+  const {data} = result;
   const route = data?.routes?.[0];
   if (!route || route.result_code !== 0) return json({error: 'no_route'}, 404);
   const {distance, duration} = route.summary ?? {};
   if (!Number.isFinite(distance) || !Number.isFinite(duration) || distance < 0 || duration < 0) {
-    return json({error: 'kakao_unavailable'}, 502);
+    return kakaoFailure({error: 'kakao_unavailable', status: 502, diagnostic: 'route-shape'}, diagnostics);
   }
   return json({meters: distance, seconds: duration, updatedAt: Date.now()});
 }
@@ -218,8 +277,9 @@ export async function kakaoRoads(kind, request, env, origin) {
   if (!takeRequest(kind, ip)) return json({error: 'too_many_requests'}, 429, {'Retry-After': '60'});
 
   try {
-    return await (kind === 'search' ? findPlaces(body, key, origin) : findDirections(body, key, origin));
+    const diagnostics = env.KAKAO_DIAGNOSTICS === '1';
+    return await (kind === 'search' ? findPlaces(body, key, origin, diagnostics) : findDirections(body, key, origin, diagnostics));
   } catch {
-    return json({error: 'kakao_unavailable'}, 502);
+    return kakaoFailure({error: 'kakao_unavailable', status: 502, diagnostic: 'road-handler'}, env.KAKAO_DIAGNOSTICS === '1');
   }
 }
