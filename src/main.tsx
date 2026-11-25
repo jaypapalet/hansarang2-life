@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { CloudSun, Phone } from 'lucide-react';
 import { ApartmentNotices, NoticeAdmin } from './apartment-notices';
 import { BusArrivals } from './bus-arrivals';
+import { seoulTime, useLiveData } from './live-data';
 import complexPhoto from './media/hansarang-complex.webp';
 import { Neighborhood } from './neighborhood';
 import { RoadBoard } from './road-board';
@@ -36,9 +37,13 @@ const stations = [
 ] as const;
 
 const charging = [
-  { name: '파워큐브', place: '204동 앞 지상', available: 6, total: 10 },
-  { name: '차지비', place: '지하 1층', available: 2, total: 4 },
+  { id: 'PW801041', name: '파워큐브', place: '204동 앞 지상' },
+  { id: 'PI766096', name: '차지비', place: '지하 1층' },
 ] as const;
+type ChargingData = {
+  checkedAt: string;
+  stations: { id: string; total: number | null; available: number | null; unknown?: number }[];
+};
 const office = { phone: '02-3663-1192', href: 'tel:0236631192', hours: '월–금 09:00–18:00' };
 const lifeTopics = ['charging', 'office'] as const;
 
@@ -120,6 +125,7 @@ function Today() {
 }
 
 function LocalServices() {
+  const { data, failed } = useLiveData<ChargingData>('/api/ev', 300_000);
   return (
     <>
       <ApartmentNotices />
@@ -127,11 +133,17 @@ function LocalServices() {
         <section id="life-charging" tabIndex={-1} className="life-detail" aria-labelledby="charging-title">
           <h2 id="charging-title">전기차 충전</h2>
           <dl className="facts">
-            {charging.map(({ name, place, available, total }) => (
-              <div key={name}><dt>{name}<small>{place}</small></dt><dd>{available} / {total}대 사용 가능</dd></div>
-            ))}
+            {charging.map(({ id, name, place }) => {
+              const station = data?.stations.find(item => item.id === id);
+              const availability = station?.available != null && station.total != null
+                ? `${station.available} / ${station.total}대 사용 가능`
+                : station?.total != null ? `총 ${station.total}대 · 가용 미확인`
+                  : data || failed ? '조회 지연' : '조회 중';
+              return <div key={id}><dt>{name}<small>{place}</small></dt><dd>{availability}</dd></div>;
+            })}
           </dl>
-          <p className="source-note">예시 데이터</p>
+          <p className="source-note">{data ? `${failed ? '이전 조회' : '조회'} ${seoulTime.format(new Date(data.checkedAt))}`
+            : failed ? '충전소 조회 지연' : '충전소 조회 중'}</p>
         </section>
         <section id="life-office" tabIndex={-1} className="life-detail" aria-labelledby="office-title">
           <h2 id="office-title">관리사무소</h2>
@@ -189,7 +201,10 @@ function App() {
         {admin || page.id !== 'today' ? <h1 id="page-title" className="page-title" tabIndex={-1}>{admin ? '아파트 공지 관리' : page.title}</h1> : null}
         {admin ? <NoticeAdmin /> : page.id === 'today' ? <Today /> : page.id === 'neighborhood' ? <Neighborhood /> : <LocalServices />}
       </main>
-      <footer className="frame footer">한사랑2차 입주민 생활정보</footer>
+      <footer className="frame footer">
+        한사랑2차 입주민 생활정보
+        <small className="footer-credit">도움주신 분 : 202동 입주민, 청결이</small>
+      </footer>
     </>
   );
 }
