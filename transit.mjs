@@ -3,6 +3,8 @@ const stations = ['가양', '증미', '등촌', '염창'];
 const stops = [
   {id:'16251', name:'태영.삼성한사랑아파트', direction:'도심 방향'},
   {id:'16252', name:'금호.한솔아파트', direction:'공항 방향'},
+  {id:'16004', name:'등촌역.강서보건소', direction:'도심 방향'},
+  {id:'16003', name:'등촌역.강서보건소', direction:'공항 방향'},
 ];
 const cache = new Map();
 
@@ -81,14 +83,14 @@ async function stationBus(stop, key) {
   url.search = new URLSearchParams({serviceKey:key, arsId:stop.id, resultType:'json'});
   const data = await json(url);
   const code = String(data.msgHeader?.headerCd);
-  if (code === '4') return {...stop, status:'ok',routes:[]};
+  if (code === '4') return {...stop,status:'ok',routes:[],source:'서울특별시 버스정보시스템'};
   if (code !== '0') throw new Error('버스 조회 실패');
   const items = data.msgBody?.itemList || [];
   const routes = (Array.isArray(items)?items:[items]).filter(r=>r.rtNm).map(r=>({
     name:r.rtNm, direction:r.adirection||r.direction||'', next:r.nxtStn||'',
     type:String(r.routeType), first:r.arrmsg1||'도착 정보 없음', second:r.arrmsg2||'도착 정보 없음',
   }));
-  return {...stop,status:'ok',routes};
+  return {...stop,status:'ok',routes,source:'서울특별시 버스정보시스템'};
 }
 
 async function publicBus(stop) {
@@ -104,7 +106,7 @@ async function publicBus(stop) {
     name:r.routeName,direction:r.direction||'',next:r.nextStation||'',type:String(r.routeType||''),
     first:r.arrmsg1||'도착 정보 없음',second:r.arrmsg2||'도착 정보 없음',
   }));
-  return {...stop,status:'ok',routes};
+  return {...stop,status:'ok',routes,source:'makka'};
 }
 
 async function bus(env) {
@@ -115,17 +117,18 @@ async function bus(env) {
       return await publicBus(stop);
     } catch {return {...stop,status:'unavailable',routes:[]};}
   }));
+  const sources = [...new Set(data.map(stop => stop.source).filter(Boolean))];
   return {status:data.every(s=>s.status==='ok')?'ok':data.some(s=>s.status==='ok')?'partial':'unavailable',
     fetchedAt:Date.now(), stops:data,
-    source:key?'서울특별시 버스정보시스템 공식 API':'makka · 버스 도착정보'};
+    source:sources.join(' / ') || null};
 }
 
 export async function transit(kind, env={}) {
   if (!['bus','subway'].includes(kind)) throw new Error('Unknown transit service');
   const prior=cache.get(kind);
-  if (prior && Date.now()<prior.expires) return prior.promise;
-  const promise=kind==='bus'?bus(env):rail(env);
-  // 버스 상류 호출 상한: 공식 키 경로의 호출을 60초에 1회로 묶는다.
-  cache.set(kind,{promise,expires:Date.now()+(kind==='bus'?60000:10000)});
-  return promise;
+  if (prior && Date.now()<prior.expires) return prior.value;
+  const value=await (kind==='bus'?bus(env):rail(env));
+  // Workers subrequests are bound to their originating request.
+  cache.set(kind,{value,expires:Date.now()+(kind==='bus'?60000:10000)});
+  return value;
 }
