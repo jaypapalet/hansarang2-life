@@ -8,8 +8,8 @@ const stops = [
 ];
 const cache = new Map();
 
-async function json(url) {
-  const response = await fetch(url, {signal:AbortSignal.timeout(9000), headers:{Accept:'application/json'}});
+async function json(url, timeout = 9000) {
+  const response = await fetch(url, {signal:AbortSignal.timeout(timeout), headers:{Accept:'application/json'}});
   if (!response.ok) throw new Error('교통정보 조회 실패');
   return response.json();
 }
@@ -81,7 +81,7 @@ async function rail(env) {
 async function stationBus(stop, key) {
   const url = new URL('https://ws.bus.go.kr/api/rest/stationinfo/getStationByUid');
   url.search = new URLSearchParams({serviceKey:key, arsId:stop.id, resultType:'json'});
-  const data = await json(url);
+  const data = await json(url, 4000);
   const code = String(data.msgHeader?.headerCd);
   if (code === '4') return {...stop,status:'ok',routes:[],source:'서울특별시 버스정보시스템'};
   if (code !== '0') throw new Error('버스 조회 실패');
@@ -93,15 +93,45 @@ async function stationBus(stop, key) {
   return {...stop,status:'ok',routes,source:'서울특별시 버스정보시스템'};
 }
 
+async function makkaBus(stop) {
+  const url = new URL('https://makka.co.kr/api/seoul-bus-stop-arrivals');
+  url.searchParams.set('arsId', stop.id);
+  const response = await fetch(url, {
+    redirect: 'manual', signal: AbortSignal.timeout(8000),
+    headers: {Accept: 'application/json', 'Cache-Control': 'no-cache'},
+  });
+  const servedAt = Date.parse(response.headers.get('Date'));
+  const age = Number(response.headers.get('Age') || 0);
+  if (!response.ok || age > 120 || (Number.isFinite(servedAt) && Date.now() - servedAt > 120_000)) {
+    throw new Error('버스 조회 지연');
+  }
+  const data = await response.json();
+  if (data.status !== 'ready' || !Array.isArray(data.arrivals)) throw new Error('버스 조회 실패');
+  const routes = data.arrivals.filter(row => typeof row?.routeName === 'string' && row.routeName).map(row => ({
+    name: row.routeName, direction: row.direction || '', next: row.nextStation || '', type: String(row.routeType || ''),
+    first: row.arrmsg1 || '도착 정보 없음', second: row.arrmsg2 || '도착 정보 없음',
+  }));
+  return {...stop, status: 'ok', routes, source: 'makka'};
+}
+
 async function bus(env) {
   const key = env.DATA_GO_KR_KEY?.trim();
-  const data = await Promise.all(stops.map(stop => {
-    const unavailable = {...stop, status:'unavailable', routes:[]};
-    return key ? stationBus(stop, key).catch(() => unavailable) : unavailable;
+  const data = await Promise.all(stops.map(async stop => {
+    if (key) {
+      try {
+        return await stationBus(stop, key);
+      } catch { /* Try Makka for this stop. */ }
+    }
+    try {
+      return await makkaBus(stop);
+    } catch {
+      return {...stop, status: 'unavailable', routes: []};
+    }
   }));
+  const sources = [...new Set(data.map(stop => stop.source).filter(Boolean))];
   return {status:data.every(s=>s.status==='ok')?'ok':data.some(s=>s.status==='ok')?'partial':'unavailable',
     fetchedAt:Date.now(), stops:data,
-    source:data.find(stop => stop.source)?.source ?? null};
+    source:sources.join(' / ') || null};
 }
 
 export async function transit(kind, env={}) {
