@@ -24,13 +24,15 @@ npm start
 | 호스팅 | ChatGPT Sites. 기존 프로젝트 ID는 `.openai/hosting.json`에 있다. |
 | 도로 정보 | 지정 경로는 OSRM 기준 경로와 TOPIS 구간 속도를 쓴다. 목적지는 카카오맵에서 찾고 카카오모빌리티로 거리와 소요 시간을 조회한다. [도로 전광판 상세](ROADS.md) |
 
-현재 화면에서 날씨, 지하철·버스 도착 시각, 전기차 충전 현황은 예시로 표시한다. 로컬 서버는 실행 중 도로 전광판의 지정 경로를 10분 간격으로 갱신한다. Sites Worker는 요청을 받을 때 10분이 지난 값을 갱신한다.
+오늘 탭에서는 등촌1동 현재 날씨와 시간대별·일자별 예보, 증미역·등촌역 열차 도착 정보를 조회한다. 버스는 서울시 정류소 API에서 받아오며 조회가 지연될 때 TOPIS 링크를 표시한다. 로컬 서버는 실행 중 도로 전광판의 지정 경로를 10분 간격으로 갱신한다. Sites Worker는 요청을 받을 때 10분이 지난 값을 갱신한다.
 
 ### 동네 소식
 
 동네 소식 탭에서 행사 일정과 구청 소식을 확인한다. 게시판에서 최근에 수집한 공지·까치뉴스의 제목을 검색할 수 있다. 서버가 [서울시 문화행사](https://data.seoul.go.kr/dataList/OA-15486/S/1/datasetView.do), [강서구 문화행사 예약](https://data.seoul.go.kr/dataList/OA-12171/S/1/datasetView.do), [서울식물원 행사 공지](https://botanicpark.seoul.go.kr/front/board/newsView.do?sn=20821)를 읽는다. 예약 이용기간만 있는 행사는 목록에 두고, 확인된 운영일에만 달력에 표시한다.
 
-구청 공지·까치뉴스와 서울식물원 공식 공지는 키 없이 조회한다. 행사 API 두 곳을 함께 쓰려면 서울 열린데이터광장 일반 인증키가 필요하다. 서버는 출처별로 3시간 동안 조회한 데이터를 재사용한다. 3시간이 지나면 다음 요청에서 새로 확인하며, 실패한 출처는 저장해 둔 최근 데이터를 함께 표시한다. 주민이 방문하지 않는 동안 갱신하려면 배포 후 예약 실행을 별도로 연결한다.
+[강서구 문화시설](https://culture.gangseo.seoul.kr/gsfc/culture/calendar.do?menuNo=800038), [LG아트센터 서울](https://www.lgart.com/product/performance/year), [강서구립도서관](https://lib.gangseo.seoul.kr/ApplyForParticipate), [서울시교육청 강서도서관](https://gslib.sen.go.kr/gslib/module/teach/index.do?menu_idx=15&searchCate1=16)의 공개 일정도 읽는다. 이 출처는 지난달부터 다음 달까지의 일정을 가져온다. 회차가 확인된 공연과 날짜가 확정된 프로그램은 달력에 표시한다. 전시처럼 운영 기간을 안내하는 경우에는 기간 목록과 공식 링크를 표시한다.
+
+구청 공지·까치뉴스와 서울식물원 공식 공지는 키 없이 조회한다. 서울시 문화행사와 강서구 문화행사 예약은 도로 정보에 쓰는 `TOPIS_OPEN_DATA_KEY`를 함께 쓴다. 서버는 출처별로 3시간 동안 조회한 데이터를 재사용한다. 3시간이 지나면 다음 요청에서 새로 확인하며, 실패한 출처는 저장해 둔 최근 데이터를 함께 표시한다. 주민이 방문하지 않는 동안 갱신하려면 배포 후 예약 실행을 별도로 연결한다.
 
 ### 아파트 공지 관리
 
@@ -47,9 +49,9 @@ Sites는 `.openai/hosting.json`에 선언된 D1 `DB`에 글과 계정을, R2 `NO
 | 변수 | 필요한 기능 | 발급처 |
 | --- | --- | --- |
 | `KAKAO_MOBILITY_REST_API_KEY` | 목적지 검색과 자동차 거리·소요 시간 조회. 같은 앱에서 카카오맵 사용 설정도 켠다. | [카카오맵](https://developers.kakao.com/docs/ko/kakaomap/common) · [카카오모빌리티](https://developers.kakaomobility.com/guide/navi-api/start) |
-| `TOPIS_OPEN_DATA_KEY` | 지정 경로의 교통 상황 갱신. 로컬 확인에는 공개 테스트 값 `sample`을 쓸 수 있다. | [서울 열린데이터광장 일반 인증키](https://data.seoul.go.kr/together/mypage/actkeyMain.do) |
-| `SEOUL_OPEN_DATA_KEY` | 동네 소식의 서울시 문화행사와 강서구 문화행사 예약. 비어 있으면 `TOPIS_OPEN_DATA_KEY`를 사용한다. `sample`은 출처별로 처음 5건만 조회한다. | [서울 열린데이터광장 일반 인증키](https://data.seoul.go.kr/together/mypage/actkeyMain.do) |
-| `DATA_GO_KR_KEY` | 서버의 날씨·특보, 버스, 전기차 충전 공식 API를 이용할 때 필요하다. | [공공데이터포털](https://www.data.go.kr/) |
+| `TOPIS_OPEN_DATA_KEY` | 지정 경로의 교통 상황, 서울시 문화행사, 강서구 문화행사 예약에 함께 쓴다. 공개 테스트 값 `sample`으로는 행사·예약 출처별로 처음 5건만 조회한다. | [서울 열린데이터광장 일반 인증키](https://data.seoul.go.kr/together/mypage/actkeyMain.do) |
+| `SEOUL_OPEN_DATA_KEY` | 선택 항목. `TOPIS_OPEN_DATA_KEY`가 비어 있을 때 행사·예약 조회에 쓴다. | [서울 열린데이터광장 일반 인증키](https://data.seoul.go.kr/together/mypage/actkeyMain.do) |
+| `DATA_GO_KR_KEY` | 서버의 날씨·특보, 버스, 전기차 충전 공식 API에 쓴다. 버스 도착 정보를 쓰려면 같은 키로 **서울특별시 정류소정보조회 서비스**를 활용할 수 있어야 한다. | [공공데이터포털](https://www.data.go.kr/) · [서울시 정류소 정보 조회](https://data.seoul.go.kr/dataList/OA-1094/F/1/datasetView.do) |
 | `SEOUL_SUBWAY_KEY` | 서버에서 서울시 공식 실시간 지하철 API를 이용할 때 필요하다. | [서울 열린데이터광장 실시간 지하철 인증키](https://data.seoul.go.kr/together/mypage/actkeyMain.do) |
 
 ### 에이전트가 키를 확인하고 저장하는 방법

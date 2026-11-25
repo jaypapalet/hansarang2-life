@@ -1,0 +1,25 @@
+.weather-forecasts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem; margin-top: 1.35rem; }
+.weather-forecasts h2 { margin-bottom: .55rem; font-size: 1.17rem; }
+.hour-forecast, .day-forecast { padding: 0; list-style: none; border-block: 1px solid var(--line); }
+.hour-forecast { position: relative; display: flex; overflow-x: auto; padding-block: .65rem; }
+.hour-forecast li { display: grid; flex: 1 0 5rem; justify-items: center; align-content: start; gap: .25rem; padding-inline: .4rem; white-space: nowrap; }
+.hour-forecast li + li { border-inline-start: 1px solid var(--line); }
+.hour-forecast svg, .day-outlook svg { color: var(--accent); }
+.hour-forecast time, .forecast-rain, .forecast-source { color: var(--muted); font-size: .875rem; }
+.hour-forecast strong, .day-range { font-variant-numeric: tabular-nums; }
+.day-forecast li { display: grid; grid-template-columns: minmax(5rem, .7fr) minmax(0, 1fr) auto minmax(2.6rem, .25fr); align-items: center; gap: .25rem .65rem; padding: .55rem .15rem; }
+.day-forecast li + li { border-top: 1px solid var(--line); }
+.day-forecast time { font-weight: 650; }
+.day-outlook, .day-range { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .45rem; }
+.day-outlook { font-size: .875rem; }
+.day-range { color: var(--muted); font-size: .875rem; }
+.day-range strong { color: #19263a; font-weight: 680; }
+.day-forecast .forecast-rain { text-align: end; }
+.forecast-source { margin-top: .35rem; }
+
+@media (max-width: 30rem) {
+  .hour-forecast li { flex-basis: 4.35rem; }
+  .day-forecast li { grid-template-columns: minmax(0, 1fr) auto; }
+  .day-outlook { grid-row: 2; }
+  .day-forecast .forecast-rain { grid-column: 2; }
+}

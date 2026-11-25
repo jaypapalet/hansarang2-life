@@ -1,6 +1,4 @@
 .notice-board { margin-bottom: 1.85rem; }
-.notice-board .section-heading { align-items: center; }
-.notice-link { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; }
 .notice-state { padding-block: .65rem; color: var(--muted); }
 .notice-list { margin-top: .5rem; padding: 0; border-block: 1px solid var(--line); list-style: none; }
 .notice-list > li + li { border-top: 1px solid var(--line); }

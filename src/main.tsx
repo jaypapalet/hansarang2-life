@@ -1,39 +1,19 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CloudSun, Phone } from 'lucide-react';
+import { Phone } from 'lucide-react';
 import { ApartmentNotices, NoticeAdmin } from './apartment-notices';
 import { BusArrivals } from './bus-arrivals';
 import { seoulTime, useLiveData } from './live-data';
-import complexPhoto from './media/hansarang-complex.webp';
 import { Neighborhood } from './neighborhood';
-import { RoadBoard } from './road-board';
+import { RoadBoard, RoadDataCredit } from './road-board';
+import { SubwayArrivals } from './subway-arrivals';
+import { Weather } from './weather';
 import './styles.css';
 
 const pages = [
   { id: 'today', label: '오늘', title: '오늘 날씨' },
   { id: 'neighborhood', label: '동네 소식', title: '동네 소식' },
   { id: 'life', label: '단지 생활', title: '단지 생활' },
-] as const;
-
-type Arrival = { name: string; minutes: number; nextMinutes: number };
-
-const stations = [
-  {
-    id: 'jeungmi',
-    name: '증미역',
-    arrivals: [
-      { name: '중앙보훈병원 방면', minutes: 3, nextMinutes: 11 },
-      { name: '개화 방면', minutes: 6, nextMinutes: 14 },
-    ],
-  },
-  {
-    id: 'deungchon',
-    name: '등촌역',
-    arrivals: [
-      { name: '중앙보훈병원 방면', minutes: 5, nextMinutes: 13 },
-      { name: '개화 방면', minutes: 4, nextMinutes: 12 },
-    ],
-  },
 ] as const;
 
 const charging = [
@@ -56,68 +36,11 @@ function subscribeToPage(listener: () => void) {
   return () => window.removeEventListener('hashchange', listener);
 }
 
-function Weather() {
-  return (
-    <section className="weather" aria-labelledby="page-title">
-      <div className="weather-content">
-        <h1 id="page-title" tabIndex={-1}>오늘 날씨</h1>
-        <p className="weather-place">등촌1동 · <time dateTime="2026-11-25">11월 25일 수요일</time> · 예시</p>
-        <div className="weather-current">
-          <strong className="temperature" aria-label="섭씨 12도">12°</strong>
-          <p className="weather-condition"><CloudSun size={25} aria-hidden="true" />구름 조금</p>
-        </div>
-        <dl className="weather-details">
-          <div><dt>최저</dt><dd>4°</dd></div>
-          <div><dt>최고</dt><dd>14°</dd></div>
-          <div><dt>강수 확률</dt><dd>10%</dd></div>
-          <div><dt>체감</dt><dd>10°</dd></div>
-        </dl>
-      </div>
-      <img className="weather-photo" src={complexPhoto} alt="한사랑2차삼성아파트 전경" width={1050} height={1397} fetchPriority="high" />
-    </section>
-  );
-}
-
-function ArrivalRows({ arrivals }: { arrivals: readonly Arrival[] }) {
-  return (
-    <ul className="arrivals" role="list">
-      {arrivals.map(({ name, minutes, nextMinutes }) => (
-        <li key={`${name}-${minutes}`}>
-          <span className="arrival-name">{name}</span>
-          <span className="arrival-times">
-            <strong>{minutes}<span>분</span></strong>
-            <small>다음<span className="sr-only"> 열차</span> {nextMinutes}분</small>
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function Subway() {
-  return (
-    <section className="subway" aria-labelledby="subway-title">
-      <div className="section-heading">
-        <h2 id="subway-title">지하철 도착 정보</h2>
-        <span className="secondary">9호선 일반 · 예시</span>
-      </div>
-      <div className="stations">
-        {stations.map(({ id, name, arrivals }) => (
-          <section key={id} className="station" aria-labelledby={`${id}-title`}>
-            <h3 id={`${id}-title`}>{name}</h3>
-            <ArrivalRows arrivals={arrivals} />
-          </section>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function Today() {
   return (
     <>
       <Weather />
-      <Subway />
+      <SubwayArrivals />
       <BusArrivals />
       <RoadBoard />
     </>
@@ -204,6 +127,7 @@ function App() {
       <footer className="frame footer">
         한사랑2차 입주민 생활정보
         <small className="footer-credit">도움주신 분 : 202동 입주민, 청결이</small>
+        {!admin && page.id === 'today' && <RoadDataCredit />}
       </footer>
     </>
   );

@@ -63,10 +63,7 @@ export function ApartmentNotices() {
   const heading = useRef<HTMLHeadingElement>(null);
 
   return <section className="notice-board" aria-labelledby="apartment-notices-title">
-    <div className="section-heading">
-      <h2 id="apartment-notices-title" ref={heading} tabIndex={-1}>아파트 공지사항</h2>
-      <a className="notice-link" href="/admin">공지 관리</a>
-    </div>
+    <h2 id="apartment-notices-title" ref={heading} tabIndex={-1}>아파트 공지사항</h2>
     {notices.loading && <p className="notice-state" role="status">공지를 불러오는 중입니다.</p>}
     {notices.error && <div className="notice-state" role="alert">
       <p>공지를 불러오지 못했습니다.</p>

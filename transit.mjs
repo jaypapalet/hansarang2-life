@@ -93,34 +93,15 @@ async function stationBus(stop, key) {
   return {...stop,status:'ok',routes,source:'서울특별시 버스정보시스템'};
 }
 
-async function publicBus(stop) {
-  const url=new URL('https://makka.co.kr/api/seoul-bus-stop-arrivals');
-  url.searchParams.set('arsId',stop.id);
-  const response=await fetch(url,{signal:AbortSignal.timeout(8000),headers:{Accept:'application/json','Cache-Control':'no-cache'}});
-  const served=Date.parse(response.headers.get('date'));
-  const age=Number(response.headers.get('age')||0);
-  if (!response.ok || age>120 || (Number.isFinite(served) && Date.now()-served>120000)) throw new Error('버스 조회 지연');
-  const data=await response.json();
-  if (data.status!=='ready' || !Array.isArray(data.arrivals)) throw new Error('정류소 조회 지연');
-  const routes=data.arrivals.filter(r=>r.routeName).map(r=>({
-    name:r.routeName,direction:r.direction||'',next:r.nextStation||'',type:String(r.routeType||''),
-    first:r.arrmsg1||'도착 정보 없음',second:r.arrmsg2||'도착 정보 없음',
-  }));
-  return {...stop,status:'ok',routes,source:'makka'};
-}
-
 async function bus(env) {
-  const key = env.DATA_GO_KR_KEY;
-  const data = await Promise.all(stops.map(async stop=>{
-    try {
-      if (key) return await stationBus(stop,key).catch(()=>publicBus(stop));
-      return await publicBus(stop);
-    } catch {return {...stop,status:'unavailable',routes:[]};}
+  const key = env.DATA_GO_KR_KEY?.trim();
+  const data = await Promise.all(stops.map(stop => {
+    const unavailable = {...stop, status:'unavailable', routes:[]};
+    return key ? stationBus(stop, key).catch(() => unavailable) : unavailable;
   }));
-  const sources = [...new Set(data.map(stop => stop.source).filter(Boolean))];
   return {status:data.every(s=>s.status==='ok')?'ok':data.some(s=>s.status==='ok')?'partial':'unavailable',
     fetchedAt:Date.now(), stops:data,
-    source:sources.join(' / ') || null};
+    source:data.find(stop => stop.source)?.source ?? null};
 }
 
 export async function transit(kind, env={}) {

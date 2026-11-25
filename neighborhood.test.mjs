@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createNeighborhoodReader, mergeEvents} from './neighborhood.mjs';
 import {fetchCulture, fetchReservations, parseBotanicEvent, parseDistrictNotices, parseNewsletterList, parseBlogDate} from './neighborhood-sources.mjs';
+import {fetchDistrictCulture, fetchGangseoLibrary, fetchLgArt, fetchNotices, fetchSeoulLibrary} from './neighborhood-sources.mjs';
 
 const gardenDates = ['2026-11-13', '2026-11-14', '2026-11-27', '2026-11-28'];
 const reservationId = 'S261102100634309493';
@@ -136,7 +137,7 @@ test('a three-hour refresh retains the last success separately for each source',
   ]);
 });
 
-test('missing keys leave public sources usable and sample results are marked limited', async () => {
+test('events use the TOPIS key first, with a fallback for existing event-only settings', async () => {
   const usedKeys = [];
   const collector = createNeighborhoodReader({loaders: {
     botanic: async () => [event({dates: gardenDates})],
@@ -145,13 +146,97 @@ test('missing keys leave public sources usable and sample results are marked lim
   }});
   const request = new Request('https://resident.test/api/neighborhood?section=events');
   const noKey = await collector(request, {});
-  assert.deepEqual(noKey.sources.map(source => source.state), ['fresh', 'unconfigured', 'unconfigured']);
+  const keyStates = data => data.sources.filter(source => ['culture', 'reservations'].includes(source.id)).map(source => source.state);
+  assert.deepEqual(keyStates(noKey), ['unconfigured', 'unconfigured']);
   assert.deepEqual(noKey.events[0].dates, gardenDates);
   assert.deepEqual(usedKeys, []);
-  const sample = await collector(request, {SEOUL_OPEN_DATA_KEY: 'sample', TOPIS_OPEN_DATA_KEY: 'unused'});
-  assert.deepEqual(sample.sources.map(source => source.state), ['fresh', 'limited', 'limited']);
+  const sample = await collector(request, {SEOUL_OPEN_DATA_KEY: 'unused', TOPIS_OPEN_DATA_KEY: ' sample '});
+  assert.deepEqual(keyStates(sample), ['limited', 'limited']);
   assert.deepEqual(usedKeys, ['sample', 'sample']);
-  const fallback = await collector(request, {TOPIS_OPEN_DATA_KEY: 'fixture-key'});
-  assert.deepEqual(fallback.sources.map(source => source.state), ['fresh', 'fresh', 'fresh']);
+  const fallback = await collector(request, {TOPIS_OPEN_DATA_KEY: ' ', SEOUL_OPEN_DATA_KEY: 'fixture-key'});
+  assert.deepEqual(keyStates(fallback), ['fresh', 'fresh']);
   assert.deepEqual(usedKeys, ['sample', 'sample', 'fixture-key', 'fixture-key']);
+});
+
+test('district calendar groups repeated exhibition dates and keeps a single concert date', async t => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-25T12:00:00+09:00'));
+  const rows = [
+    [271, '공연', '송년음악회', '19'],
+    [270, '전시', '정기전', '18'],
+    [270, '전시', '정기전', '19'],
+  ].map(([id, kind, title, date]) =>
+    '<a href="#" class="target">' + title + '</a><span class="label-st1 gs">강서아트리움</span>'
+      + '<span class="label-st2">' + kind + '</span><strong> 일</strong><div>2026년 12월 ' + date
+      + '일 16:00</div><button onclick="moveToDetail(\'' + id + '\')">상세보기</button>').join('');
+  t.mock.method(globalThis, 'fetch', async url => {
+    const date = new URL(url).searchParams.get('searchDate');
+    return new Response('<input name="searchDate" value="' + date + '"><table class="calendar">'
+      + (date === '2026-12-01' ? rows : '') + '</table>');
+  });
+  const [concert, exhibition] = await fetchDistrictCulture();
+  assert.deepEqual(concert.dates, ['2026-12-19']);
+  assert.deepEqual(exhibition.dates, []);
+  assert.deepEqual(exhibition.range, {start: '2026-12-18', end: '2026-12-19'});
+  const duplicate = {...concert, id: 'culture:271', organizerId: concert.id, title: '서울시 페이지 제목', dates: ['2026-12-20']};
+  const merged = mergeEvents([[concert], [duplicate]]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].title, concert.title);
+  assert.equal(merged[0].url, concert.url);
+  assert.deepEqual(merged[0].dates, concert.dates);
+});
+
+test('LG performances only mark published sessions in the matching month', async t => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-25T12:00:00+09:00'));
+  t.mock.method(globalThis, 'fetch', async value => {
+    const url = new URL(value);
+    if (url.searchParams.has('year')) return Response.json({Schedule: [{Days: [{
+      DetailsUrl: 'https://www.lgart.com/product/performance/251', Title: '뮤지컬 <예시>', Place: '홀',
+      PlayBeginDate: '20261201', PlayEndDate: '20261231', GenreName: '뮤지컬',
+    }]}]});
+    assert.equal(url.pathname, '/product/ko/performance/251/calendar/2026/12');
+    return Response.json({Year: 2026, Month: 12, Weeks: [[
+      {IsPlayDay: true, Date: '2026-12-05 (토)'}, {IsPlayDay: false, Date: '2026-12-06 (일)'},
+      {IsPlayDay: true, Date: '2027-01-01 (금)'},
+    ]]});
+  });
+  const [performance] = await fetchLgArt();
+  assert.deepEqual(performance.dates, ['2026-12-05']);
+  assert.equal(performance.title, '뮤지컬 〈예시〉');
+  assert.deepEqual(performance.range, {start: '2026-12-01', end: '2026-12-31'});
+});
+
+test('library dates describe the actual class and enrollment stays separate', async t => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-25T12:00:00+09:00'));
+  t.mock.method(globalThis, 'fetch', async (value, options) => {
+    const url = new URL(value);
+    if (url.hostname === 'lib.gangseo.seoul.kr') {
+      assert.equal(options.headers.Accept, 'application/json');
+      return Response.json({status: 'OK', data: {data: [{
+        leCode: 37, leLGCode: 10, leLName: '북 퍼퓸 만들기', libNameS: '가양', leArea: '제1강의실',
+        leOpenSDateFmt: '2026.12.08', leOpenEDateFmt: '2026.12.08',
+        leTakeSDate: Date.parse('2026-11-30T10:00:00+09:00') / 1000, leMoney: '0',
+      }]}});
+    }
+    assert.equal(options.headers.Accept, 'text/html');
+    return new Response('<ul class="teach_list"><a keyValue1="9" keyValue3="1" class="detail-btn">'
+      + '<b class="title">예술무대</b><span>강의기간</span>2026-12-09~2026-12-23'
+      + '<span>접수기간</span>2026-11-20~2026-11-20</a></ul>');
+  });
+  const [oneDay] = await fetchGangseoLibrary();
+  assert.deepEqual(oneDay.dates, ['2026-12-08']);
+  assert.equal(oneDay.place, '가양도서관 제1강의실');
+  assert.equal(oneDay.reservation.opensAt, '2026-11-30T01:00:00.000Z');
+  const [period] = await fetchSeoulLibrary();
+  assert.deepEqual(period.dates, []);
+  assert.deepEqual(period.range, {start: '2026-12-09', end: '2026-12-23'});
+});
+
+test('the shared request uses Workers-compatible redirects and never follows them', async t => {
+  const fetch = t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(new URL(url).hostname, 'www.gangseo.seoul.kr');
+    assert.equal(options.redirect, 'manual');
+    return Response.redirect('https://example.com/', 302);
+  });
+  await assert.rejects(fetchNotices(), {message: 'source_http_error'});
+  assert.equal(fetch.mock.callCount(), 1);
 });
