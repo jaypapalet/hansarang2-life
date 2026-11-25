@@ -27,7 +27,7 @@ const server=http.createServer(async(req,res)=>{
 server.listen(port,'127.0.0.1',()=>{
   const origin='http://127.0.0.1:'+port;
   console.log(origin+'/');
-  if(process.env.TOPIS_OPEN_DATA_KEY){
+  if(process.env.TOPIS_OPEN_DATA_KEY||process.env.KAKAO_MOBILITY_REST_API_KEY){
     const refresh=async()=>{
       const response=await worker.fetch(new Request(origin+'/api/roads/fixed'),process.env);
       await response.arrayBuffer();
