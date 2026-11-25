@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1795568400000,
+      "tag": "0000_apartment_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1795572000000,
+      "tag": "0001_notice_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795572000001,
+      "tag": "0002_notice_photos",
+      "breakpoints": true
+    }
+  ]
+}

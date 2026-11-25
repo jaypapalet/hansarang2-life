@@ -24,7 +24,21 @@ npm start
 | 호스팅 | ChatGPT Sites. 기존 프로젝트 ID는 `.openai/hosting.json`에 있다. |
 | 도로 정보 | 지정 경로는 OSRM 기준 경로와 TOPIS 구간 속도를 쓴다. 목적지는 카카오맵에서 찾고 카카오모빌리티로 거리와 소요 시간을 조회한다. [도로 전광판 상세](ROADS.md) |
 
-현재 화면에서 날씨, 지하철·버스 도착 시각, 전기차 충전 현황은 예시로 표시한다. 실제 조회가 연결된 기능은 도로 전광판과 목적지 검색이다. 로컬 서버는 실행 중 지정 경로를 10분 간격으로 갱신한다. Sites Worker는 요청을 받을 때 10분이 지난 값을 갱신한다.
+현재 화면에서 날씨, 지하철·버스 도착 시각, 전기차 충전 현황은 예시로 표시한다. 로컬 서버는 실행 중 도로 전광판의 지정 경로를 10분 간격으로 갱신한다. Sites Worker는 요청을 받을 때 10분이 지난 값을 갱신한다.
+
+### 동네 소식
+
+동네 소식 탭에서 행사 일정과 구청 소식을 확인한다. 게시판에서 최근에 수집한 공지·까치뉴스의 제목을 검색할 수 있다. 서버가 [서울시 문화행사](https://data.seoul.go.kr/dataList/OA-15486/S/1/datasetView.do), [강서구 문화행사 예약](https://data.seoul.go.kr/dataList/OA-12171/S/1/datasetView.do), [서울식물원 행사 공지](https://botanicpark.seoul.go.kr/front/board/newsView.do?sn=20821)를 읽는다. 예약 이용기간만 있는 행사는 목록에 두고, 확인된 운영일에만 달력에 표시한다.
+
+구청 공지·까치뉴스와 서울식물원 공식 공지는 키 없이 조회한다. 행사 API 두 곳을 함께 쓰려면 서울 열린데이터광장 일반 인증키가 필요하다. 서버는 출처별로 3시간 동안 조회한 데이터를 재사용한다. 3시간이 지나면 다음 요청에서 새로 확인하며, 실패한 출처는 저장해 둔 최근 데이터를 함께 표시한다. 주민이 방문하지 않는 동안 갱신하려면 배포 후 예약 실행을 별도로 연결한다.
+
+### 아파트 공지 관리
+
+첫 운영자 등록, 편집자 계정 관리, 사진 공지 작성 절차는 [아파트 공지 관리 가이드](ADMIN-GUIDE.md)를 참고한다.
+
+Sites는 `.openai/hosting.json`에 선언된 D1 `DB`에 글과 계정을, R2 `NOTICE_PHOTOS`에 사진을 저장한다. 배포할 때 `drizzle/`의 SQL 마이그레이션을 적용한다. 공지 수정이나 삭제로 내려간 사진은 주민 화면에서 바로 사라진다. 저장소에서 사진을 지우는 작업이 실패하면 이후 관리 요청에서 다시 시도한다.
+
+로컬 글과 계정은 `.local/apartment-notices.sqlite`에, 사진은 `.local/notice-photos/`에 저장한다.
 
 ## API 키 준비
 
@@ -34,6 +48,7 @@ npm start
 | --- | --- | --- |
 | `KAKAO_MOBILITY_REST_API_KEY` | 목적지 검색과 자동차 거리·소요 시간 조회. 같은 앱에서 카카오맵 사용 설정도 켠다. | [카카오맵](https://developers.kakao.com/docs/ko/kakaomap/common) · [카카오모빌리티](https://developers.kakaomobility.com/guide/navi-api/start) |
 | `TOPIS_OPEN_DATA_KEY` | 지정 경로의 교통 상황 갱신. 로컬 확인에는 공개 테스트 값 `sample`을 쓸 수 있다. | [서울 열린데이터광장 일반 인증키](https://data.seoul.go.kr/together/mypage/actkeyMain.do) |
+| `SEOUL_OPEN_DATA_KEY` | 동네 소식의 서울시 문화행사와 강서구 문화행사 예약. 비어 있으면 `TOPIS_OPEN_DATA_KEY`를 사용한다. `sample`은 출처별로 처음 5건만 조회한다. | [서울 열린데이터광장 일반 인증키](https://data.seoul.go.kr/together/mypage/actkeyMain.do) |
 | `DATA_GO_KR_KEY` | 서버의 날씨·특보, 버스, 전기차 충전 공식 API를 이용할 때 필요하다. | [공공데이터포털](https://www.data.go.kr/) |
 | `SEOUL_SUBWAY_KEY` | 서버에서 서울시 공식 실시간 지하철 API를 이용할 때 필요하다. | [서울 열린데이터광장 실시간 지하철 인증키](https://data.seoul.go.kr/together/mypage/actkeyMain.do) |
 
@@ -51,7 +66,7 @@ npm start
 
 1. 현재 환경의 **Sites 스킬**을 읽는다. `.openai/hosting.json`의 `project_id`를 그대로 써서 `get_site`로 주소와 접근 설정을 확인하고, `create_source_repository_write_credential`로 같은 프로젝트의 소스 편집 권한을 확인한다. 기존 사이트 주소와 공개 범위를 유지한다.
 2. `git status --short`로 배포할 변경을 확인한다. Sites 스킬의 `site-workflow.mjs --project-id <project_id>`로 운영 소스를 연다. GitHub와 Sites의 이력이 다르면 빈 디렉터리에서 열고, 반환된 `checkout_path`에 배포할 추가·수정·삭제를 적용한다. 양쪽에서 바뀐 파일은 비교해서 병합한다.
-3. 위 절차로 이번 배포에 필요한 API 키를 확인한다. Sites 체크아웃에서 `npm ci`, `npm test`, 빌드, `git diff --check`를 실행한다. Sites 스킬의 `build-site.mjs`는 저장소의 `npm run build`를 실행한다. 빌드 후 `dist/server/index.js`가 있는지 확인한다. Worker 방식에서는 `.openai/hosting.json`의 `static` 필드를 생략한다. 아카이브에는 `dist/.openai/hosting.json`과 `dist/server/index.js`가 들어간다.
+3. 위 절차로 이번 배포에 필요한 API 키를 확인한다. 첫 운영자 등록이 필요하면 `NOTICE_INITIAL_PASSWORD`도 준비한다. Sites 체크아웃에서 `npm ci`, `npm test`, 빌드, `git diff --check`를 실행한다. Sites 스킬의 `build-site.mjs`는 저장소의 `npm run build`를 실행한다. Worker 방식에서는 `.openai/hosting.json`의 `static` 필드를 생략한다. 아카이브에서 `dist/.openai/hosting.json`의 D1·R2 바인딩과 `dist/.openai/drizzle/`의 마이그레이션, `dist/server/index.js`를 확인한다.
 4. Sites 스킬의 소스 도우미에 `credential`, 앞서 받은 `source`, 남은 검증·빌드 `commands`, 절대 경로 `archivePath`를 스킬에 명시된 표준 입력으로 전달한다. 도우미가 운영 소스 브랜치에 변경을 푸시하고 아카이브를 만든다. 소스 접근 자격 증명은 세션에서만 다룬다. 로컬 `.env`, 키 입력 파일, 개발 환경 파일은 배포에서 제외한다.
 5. 도우미가 반환한 SHA와 그 아카이브로 게시한다. 소유자만 접근하는 사이트는 `save_version_and_deploy_private`를 사용한다. 해당 도구가 없으면 `save_site_version` 다음에 `deploy_private_site_version`을 사용한다. 다른 접근 범위에서는 `save_site_version` 다음에 `deploy_site_version`을 사용한다. 버전 저장만 요청받았다면 게시 단계는 생략한다.
 6. 배포가 대기·빌드·게시 중이면 `get_deployment_status`로 완료를 확인한다. 배포 주소와 새 버전의 주민 화면을 확인하고 변경된 API가 있다면 응답도 확인한다. 최종 결과에 주소, 버전 또는 SHA, 확인한 기능을 남긴다.

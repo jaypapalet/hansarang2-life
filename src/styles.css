@@ -227,7 +227,7 @@ svg { flex: none; }
   h2 { font-size: 1.27rem; }
   h3 { font-size: 1.07rem; }
   .masthead { display: block; }
-  .main-nav { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .25rem; }
+  .main-nav { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .25rem; }
   .main-nav a { min-block-size: 44px; font-size: .9375rem; }
   .weather { grid-template-columns: minmax(0,1fr); }
   .weather-content { display: grid; grid-template-columns: minmax(0,1fr) 30%; }
