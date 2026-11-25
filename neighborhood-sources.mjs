@@ -322,7 +322,7 @@ export async function fetchCulture(key) {
   const now = Date.now();
   const window = {start: kstDay(now - 62 * DAY_MS), end: kstDay(now + 550 * DAY_MS)};
   const events = [];
-  await bounded(30000, signal => eachSeoulPage(value, CULTURE_SERVICE, MAX_CULTURE_ROWS, signal, rows => {
+  await bounded(24000, signal => eachSeoulPage(value, CULTURE_SERVICE, MAX_CULTURE_ROWS, signal, rows => {
     for (const row of rows) {
       const event = cultureEvent(row, window);
       if (event) events.push(event);
@@ -577,7 +577,7 @@ export async function fetchLgArt() {
   // Limit subrequests. Every performance remains in the period list if its session lookup is skipped or fails.
   const sessions = months.flatMap(month => events.filter(event => event.range.start <= month.end && event.range.end >= month.start)
     .map(event => ({event, month}))).slice(0, 15);
-  await bounded(22000, async signal => {
+  await bounded(16000, async signal => {
     for (let offset = 0; offset < sessions.length && !signal.aborted; offset += 4) {
       const batch = sessions.slice(offset, offset + 4);
       await Promise.all(batch.map(async ({event, month}) => {

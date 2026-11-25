@@ -6,7 +6,7 @@ function privateResponse(response) {
 }
 
 export default {
-  async fetch(request, env = {}) {
+  async fetch(request, env = {}, context) {
     const url=new URL(request.url);
     const path=url.pathname;
     if(path==='/api/apartment-notices'||path.startsWith('/api/apartment-notices/')){
@@ -26,8 +26,12 @@ export default {
         return privateResponse(Response.json({error:'invalid_section'},{status:400,headers}));
       }
       if(request.method==='HEAD')return privateResponse(new Response(null,{headers}));
-      const data=await modules['neighborhood.mjs'].readNeighborhood(request,env);
-      return privateResponse(Response.json(data,{headers}));
+      try {
+        const data=await modules['neighborhood.mjs'].readNeighborhood(request,env,undefined,context);
+        return privateResponse(Response.json(data,{headers}));
+      } catch {
+        return privateResponse(Response.json({error:'neighborhood_store_unavailable'},{status:503,headers}));
+      }
     }
     if(path==='/robots.txt')return privateResponse(new Response('User-agent: *\nDisallow: /\n',{headers:{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'public, max-age=3600'}}));
     const kind=path.slice(5);

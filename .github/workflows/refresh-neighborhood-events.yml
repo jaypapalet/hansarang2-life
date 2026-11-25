@@ -1,0 +1,39 @@
+name: Refresh neighborhood events
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: refresh-neighborhood-events
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Refresh and verify the saved event snapshots
+        shell: bash
+        run: |
+          snapshot="$(mktemp)"
+          trap 'rm -f "$snapshot"' EXIT
+          hour="$(( $(date -u +%s) / 3600 * 3600000 ))"
+          for attempt in 1 2 3; do
+            if curl --fail --silent --show-error --max-time 40 --output "$snapshot" \
+              'https://hansarang2.jaypapa.kr/api/neighborhood?section=events&wait=1' &&
+              jq -e --argjson hour "$hour" '
+                .storage == "d1" and
+                any(.sources[]; .state == "fresh" or .state == "limited") and
+                all(.sources[]; .state == "unconfigured" or
+                  (.checkedAt >= $hour and (.state == "fresh" or .state == "limited")))
+              ' "$snapshot" >/dev/null; then
+              jq -r '"Verified \(.events | length) events from D1."' "$snapshot"
+              exit 0
+            fi
+            if [[ "$attempt" != 3 ]]; then sleep 12; fi
+          done
+          jq -c '[.sources[]? | {id, state, checkedAt}]' "$snapshot" || true
+          exit 1

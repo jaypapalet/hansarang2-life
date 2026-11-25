@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import {mkdtempSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {test} from 'node:test';
 import {createNeighborhoodReader, mergeEvents} from './neighborhood.mjs';
+import {openLocalNoticeDatabase} from './apartment-notices-local.mjs';
 import {fetchCulture, fetchReservations, parseBotanicEvent, parseDistrictNotices, parseNewsletterList, parseBlogDate} from './neighborhood-sources.mjs';
 import {fetchDistrictCulture, fetchGangseoLibrary, fetchLgArt, fetchNotices, fetchSeoulLibrary} from './neighborhood-sources.mjs';
 
@@ -239,4 +243,103 @@ test('the shared request uses Workers-compatible redirects and never follows the
   });
   await assert.rejects(fetchNotices(), {message: 'source_http_error'});
   assert.equal(fetch.mock.callCount(), 1);
+});
+
+test('event snapshots survive reopening and refresh hourly without delaying a warm page', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'hansarang-events-test-'));
+  const path = join(directory, 'local.sqlite');
+  let db = openLocalNoticeDatabase(path);
+  t.after(() => {
+    db.close();
+    rmSync(directory, {recursive: true, force: true});
+  });
+  let clock = Date.parse('2026-11-25T10:10:00Z');
+  let calls = 0;
+  let title = '저장된 행사';
+  const loaders = {botanic: async () => {
+    calls++;
+    if (!title) throw new Error('source offline');
+    return [event({title})];
+  }};
+  const request = new Request('https://resident.test/api/neighborhood?section=events');
+  const makeReader = () => createNeighborhoodReader({loaders, now: () => clock});
+  let reader = makeReader();
+  const first = await reader(request, {DB: db});
+  assert.equal(first.storage, 'd1');
+  assert.equal(first.events[0].title, title);
+  assert.equal(first.sources[0].checkedAt, clock);
+  db.close();
+  db = openLocalNoticeDatabase(path);
+  reader = makeReader();
+  clock += 49 * 60_000;
+  assert.equal((await reader(request, {DB: db})).events[0].title, title);
+  assert.equal(calls, 1);
+
+  title = '갱신된 행사';
+  clock += 60_000;
+  const jobs = [];
+  const warm = await reader(request, {DB: db}, undefined, {waitUntil: job => jobs.push(job)});
+  assert.equal(warm.events[0].title, '저장된 행사');
+  assert.equal(warm.sources[0].state, 'stale');
+  assert(jobs.length > 0);
+  await Promise.all(jobs);
+  assert.equal((await reader(request, {DB: db})).events[0].title, title);
+  assert.equal(calls, 2);
+
+  title = null;
+  clock += 60 * 60_000;
+  const waitRequest = new Request(request.url + '&wait=1');
+  const failed = await reader(waitRequest, {DB: db}, undefined, {waitUntil: () => assert.fail('expected awaited refresh')});
+  assert.equal(failed.events[0].title, '갱신된 행사');
+  assert.equal(failed.sources[0].state, 'stale');
+  assert.equal(failed.sources[0].checkedAt, clock);
+  assert.equal((await reader(waitRequest, {DB: db})).events[0].title, '갱신된 행사');
+  assert.equal(calls, 3);
+});
+
+test('a D1 event refresh lease prevents concurrent fetches and fences a late writer', async t => {
+  const db = openLocalNoticeDatabase(':memory:');
+  t.after(() => db.close());
+  const request = new Request('https://resident.test/api/neighborhood?section=events&wait=1');
+  let clock = Date.parse('2026-11-25T10:10:00Z');
+  let calls = 0;
+  const pending = Promise.withResolvers();
+  const started = Promise.withResolvers();
+  const first = createNeighborhoodReader({now: () => clock, loaders: {botanic: async () => {
+    calls++;
+    started.resolve();
+    return pending.promise;
+  }}});
+  const second = createNeighborhoodReader({now: () => clock, loaders: {botanic: async () => {
+    calls++;
+    return [event({title: '현재 행사'})];
+  }}});
+  const old = first(request, {DB: db});
+  await started.promise;
+  try {
+    await second(request, {DB: db});
+    assert.equal(calls, 1);
+    clock += 46_000;
+    const recovered = await second(request, {DB: db});
+    assert.equal(recovered.events[0].title, '현재 행사');
+    assert.equal(calls, 2);
+    pending.resolve([event({title: '늦게 도착한 예전 행사'})]);
+    await old;
+    assert.equal((await second(request, {DB: db})).events[0].title, '현재 행사');
+  } finally {
+    pending.resolve([]);
+    await old;
+  }
+});
+
+test('event snapshots keep the public sample and registered keys separate', async t => {
+  const db = openLocalNoticeDatabase(':memory:');
+  t.after(() => db.close());
+  const request = new Request('https://resident.test/api/neighborhood?section=events');
+  const reader = createNeighborhoodReader({loaders: {culture: async key => [event({id: key, title: key})]}});
+  const sample = await reader(request, {DB: db, TOPIS_OPEN_DATA_KEY: 'sample'});
+  const live = await reader(request, {DB: db, TOPIS_OPEN_DATA_KEY: 'fixture'});
+  assert.equal(sample.events[0].title, 'sample');
+  assert.equal(live.events[0].title, 'fixture');
+  assert.equal((await reader(request, {DB: db})).events.length, 0);
 });

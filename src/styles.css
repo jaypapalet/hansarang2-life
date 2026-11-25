@@ -35,6 +35,9 @@ svg { flex: none; }
 
 .frame { width: min(calc(100% - 2 * var(--gutter)), 68rem); margin-inline: auto; }
 .secondary { color: var(--muted); font-size: .9375rem; }
+.source-details { margin-top: .65rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .875rem; }
+.source-details > summary { min-height: 44px; padding-block: .65rem; font-weight: 650; cursor: pointer; }
+.source-details > summary:hover { color: var(--accent); }
 .skip { position: absolute; z-index: 2; top: .5rem; left: .75rem; transform: translateY(-160%); padding: .7rem; background: #fff; }
 .skip:focus { transform: none; }
 
@@ -155,9 +158,9 @@ svg { flex: none; }
 .bus-route span { word-break: keep-all; overflow-wrap: anywhere; }
 .bus-times { justify-items: end; text-align: end; font-variant-numeric: tabular-nums; }
 .bus-times strong { font-size: .9375rem; font-weight: 720; }
+.bus-next { max-width: 14em; overflow-wrap: anywhere; }
 .bus-more { border-top: 1px solid var(--bus-line); }
 .bus-more summary { min-height: 44px; padding-block: .7rem; color: var(--accent); font-size: .875rem; font-weight: 650; cursor: pointer; }
-.bus-source { display: flex; justify-content: end; }
 .bus-source a { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; }
 
 .road-board > .secondary { margin-top: .27rem; }
