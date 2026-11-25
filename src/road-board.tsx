@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import roadPlaces from './road-places.json';
 import roadTimes from './road-times.json';
+import { VmsDialog } from './vms-dialog';
 
 const refreshMs = 10 * 60 * 1000;
 const { origin, destinations } = roadPlaces;
@@ -12,7 +13,7 @@ type TravelTime = { meters: number; seconds: number };
 type FixedTimes = {
   checkedAt: number;
   updatedAt: number | null;
-  routes: (TravelTime & { id: string })[];
+  routes: (TravelTime & { id: string; source: 'topis' | 'kakao'; updatedAt: number })[];
 };
 type Place = { id: string; name: string; address: string; lat: number; lon: number };
 
@@ -144,9 +145,11 @@ function DestinationSearch() {
 export function RoadBoard() {
   const [fixed, setFixed] = useState<FixedTimes | null>(null);
   const [failed, setFailed] = useState(false);
+  const [vmsOpen, setVmsOpen] = useState(false);
+  const filePreview = window.location.protocol === 'file:';
 
   useEffect(() => {
-    if (window.location.protocol === 'file:') return;
+    if (filePreview) return;
     const controller = new AbortController();
     let timer: number | undefined;
     let pending = false;
@@ -158,7 +161,7 @@ export function RoadBoard() {
       let delay = refreshMs;
       try {
         const response = await fetch('/api/roads/fixed', {signal: controller.signal, cache: 'no-store'});
-        if (!response.ok) throw new Error('topis_unavailable');
+        if (!response.ok) throw new Error('road_data_unavailable');
         const snapshot: FixedTimes = await response.json();
         if (controller.signal.aborted) return;
         setFixed(snapshot);
@@ -180,19 +183,23 @@ export function RoadBoard() {
       controller.abort();
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, []);
+  }, [filePreview]);
 
-  const stale = Boolean(failed || (fixed?.updatedAt && fixed.checkedAt !== fixed.updatedAt));
+  const stale = Boolean(failed || fixed?.routes.some(route => fixed.checkedAt !== route.updatedAt));
+  const hasKakao = fixed?.routes.some(route => route.source === 'kakao');
 
   return (
     <section id="today-roads" className="road-board" aria-labelledby="today-roads-title">
       <h2 id="today-roads-title">주변 도로 전광판</h2>
-      <p className="secondary">{origin.name} 출발 · 자동차</p>
+      <div className="road-heading-row">
+        <p className="secondary">{origin.name} 출발 · 자동차</p>
+        {!filePreview && <button className="road-vms-button" type="button" aria-haspopup="dialog"
+          onClick={() => setVmsOpen(true)}>실제 전광판</button>}
+      </div>
       <ul className="road-list" role="list">
         {destinations.map(destination => {
           const estimate = fixed?.routes.find(item => item.id === destination.id);
-          const fallback = roadTimes.estimates.find(item => item.id === destination.id);
-          const time = estimate ?? fallback;
+          const time = estimate ?? (filePreview ? roadTimes.estimates.find(item => item.id === destination.id) : undefined);
           return (
             <li key={destination.id}>
               <a href={kakaoDirections(destination)} target="_blank" rel="noopener noreferrer">
@@ -201,7 +208,7 @@ export function RoadBoard() {
                   {time && <small>{(time.meters / 1000).toFixed(1)}km</small>}
                 </span>
                 <span className="road-time">
-                  {time && <strong>{minutes(time.seconds)}</strong>}
+                  <strong>{time ? minutes(time.seconds) : failed || fixed ? '조회 지연' : '조회 중'}</strong>
                   <span>길찾기<span className="sr-only"> (새 탭)</span></span>
                 </span>
               </a>
@@ -211,12 +218,14 @@ export function RoadBoard() {
       </ul>
       <p className="source-note">
         {fixed?.updatedAt ? <>{stale ? '이전 조회' : '조회'} <time dateTime={new Date(fixed.updatedAt).toISOString()}>{dateTime.format(fixed.updatedAt)}</time> · 지정 경로 기준</>
-          : <>도로망 기준 예상 시간</>}
+          : filePreview ? '도로망 기준 예상 시간' : failed || fixed ? '교통 상황 조회 지연' : '교통 상황 조회 중'}
         <br />
         <a href="https://data.seoul.go.kr/dataList/OA-13291/A/1/datasetView.do">서울시 교통 정보</a> ·
         {' '}<a href="https://routing.openstreetmap.de/about.html">OSRM (FOSSGIS)</a> · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href={`https://www.openstreetmap.org/#map=15/${origin.lat}/${origin.lon}`}>지도 수정</a>
+        {hasKakao && <> · <a href="https://developers.kakaomobility.com/guide/navi-api/start">카카오모빌리티</a></>}
       </p>
       <DestinationSearch />
+      {vmsOpen && <VmsDialog onClose={() => setVmsOpen(false)} />}
     </section>
   );
 }
