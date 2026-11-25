@@ -30,11 +30,15 @@ type Section = 'events' | 'notices';
 const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
 const postsPerPage = 10;
 const officialSources = [
-  { id: 'culture', name: '강서문화관광', url: 'https://culture.gangseo.seoul.kr/' },
-  { id: 'reservations', name: '서울시 공공서비스예약', url: 'https://yeyak.seoul.go.kr/' },
-  { id: 'notices', name: '강서구 공지', url: 'https://www.gangseo.seoul.kr/gs040101' },
-  { id: 'news', name: '강서까치뉴스', url: 'https://www.gangseo.seoul.kr/gs040404' },
-];
+  { section: 'events', id: 'district-culture', name: '강서구 문화시설', url: 'https://culture.gangseo.seoul.kr/gsfc/culture/calendar.do?menuNo=800038' },
+  { section: 'events', id: 'lg-art', name: 'LG아트센터 서울', url: 'https://www.lgart.com/product/performance/year' },
+  { section: 'events', id: 'gangseo-library', name: '강서구립도서관', url: 'https://lib.gangseo.seoul.kr/ApplyForParticipate' },
+  { section: 'events', id: 'seoul-library', name: '서울시교육청 강서도서관', url: 'https://gslib.sen.go.kr/gslib/module/teach/index.do?menu_idx=15&searchCate1=16' },
+  { section: 'events', id: 'culture', name: '서울시 문화행사', url: 'https://data.seoul.go.kr/dataList/OA-15486/S/1/datasetView.do' },
+  { section: 'events', id: 'reservations', name: '서울시 공공서비스예약', url: 'https://yeyak.seoul.go.kr/' },
+  { section: 'notices', id: 'notices', name: '강서구 공지', url: 'https://www.gangseo.seoul.kr/gs040101' },
+  { section: 'notices', id: 'news', name: '강서까치뉴스', url: 'https://www.gangseo.seoul.kr/gs040404' },
+] satisfies { section: Section; id: string; name: string; url: string }[];
 const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' });
 const updatedFormatter = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 const reservationFormatter = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -165,19 +169,19 @@ function EventItem({ event, month, showDates = false, unconfirmed = false }: { e
     {(opens || closes) && <p className="nb-meta">예약 접수 {opens && `${opens}부터`}{opens && closes ? ' ' : ''}{closes && `${closes}까지`}</p>}
     <div className="nb-event-links">
       <OfficialLink url={event.url} label={`${event.title} 공식 안내`}>공식 안내</OfficialLink>
-      {reservation && <OfficialLink url={reservation.url} label={`${event.title} 예약 안내`}>예약 안내</OfficialLink>}
+      {reservation?.url !== event.url && <OfficialLink url={reservation?.url} label={`${event.title} 예약 안내`}>예약 안내</OfficialLink>}
     </div>
   </li>;
 }
 
 function SourceNotes({ sources, section, failed }: { sources: Source[]; section: Section; failed: boolean }) {
-  const definitions = officialSources.filter(source => section === 'events' ? ['culture', 'reservations'].includes(source.id) : ['notices', 'news'].includes(source.id));
+  const definitions = officialSources.filter(source => source.section === section);
   const states: Record<Source['state'], string> = {
     fresh: '', stale: '이전 정보 · 새 소식 확인 필요', unavailable: '현재 불러올 수 없음',
     unconfigured: '공식 사이트에서 확인', limited: section === 'events' ? '일부 일정만 확인됨' : '일부 게시물만 확인됨',
   };
   return <div className="nb-sources" aria-label="공식 출처와 확인 시각">
-    <p className="nb-source-heading">공식 출처 <span>· 확인 시각은 한국 시간</span></p>
+    <p className="nb-source-heading">공식 출처</p>
     <ul>
       {definitions.map(definition => {
         const source = sources.find(item => item.id === definition.id);
@@ -343,7 +347,7 @@ export function Neighborhood() {
     <section aria-labelledby={`${id}-events-title`}>
       <SectionHeading id={`${id}-events-title`} title="행사 일정" request={eventRequest} />
       <div className="nb-events-toolbar">
-        <p className="nb-meta">강서구 공식 행사 안내</p>
+        <p className="nb-meta">강서구 공연·전시·도서관 프로그램</p>
         <div className="nb-view" role="group" aria-label="행사 보기 방식">
           <button type="button" aria-pressed={view === 'calendar'} aria-controls={`${id}-schedule`} onClick={() => setView('calendar')}>달력</button>
           <button type="button" aria-pressed={view === 'list'} aria-controls={`${id}-schedule`} onClick={() => setView('list')}>목록</button>

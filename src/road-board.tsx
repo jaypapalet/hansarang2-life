@@ -5,15 +5,11 @@ import { VmsDialog } from './vms-dialog';
 
 const refreshMs = 10 * 60 * 1000;
 const { origin, destinations } = roadPlaces;
-const dateTime = new Intl.DateTimeFormat('ko-KR', {
-  timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
-});
 
 type TravelTime = { meters: number; seconds: number };
 type FixedTimes = {
   checkedAt: number;
-  updatedAt: number | null;
-  routes: (TravelTime & { id: string; source: 'topis' | 'kakao'; updatedAt: number })[];
+  routes: (TravelTime & { id: string; updatedAt: number })[];
 };
 type Place = { id: string; name: string; address: string; lat: number; lon: number };
 
@@ -185,9 +181,6 @@ export function RoadBoard() {
     };
   }, [filePreview]);
 
-  const stale = Boolean(failed || fixed?.routes.some(route => fixed.checkedAt !== route.updatedAt));
-  const hasKakao = fixed?.routes.some(route => route.source === 'kakao');
-
   return (
     <section id="today-roads" className="road-board" aria-labelledby="today-roads-title">
       <h2 id="today-roads-title">주변 도로 전광판</h2>
@@ -200,6 +193,7 @@ export function RoadBoard() {
         {destinations.map(destination => {
           const estimate = fixed?.routes.find(item => item.id === destination.id);
           const time = estimate ?? (filePreview ? roadTimes.estimates.find(item => item.id === destination.id) : undefined);
+          const stale = estimate && (failed || estimate.updatedAt !== fixed?.checkedAt);
           return (
             <li key={destination.id}>
               <a href={kakaoDirections(destination)} target="_blank" rel="noopener noreferrer">
@@ -209,23 +203,22 @@ export function RoadBoard() {
                 </span>
                 <span className="road-time">
                   <strong>{time ? minutes(time.seconds) : failed || fixed ? '조회 지연' : '조회 중'}</strong>
-                  <span>길찾기<span className="sr-only"> (새 탭)</span></span>
+                  <span>{stale && '이전 값 · '}길찾기<span className="sr-only"> (새 탭)</span></span>
                 </span>
               </a>
             </li>
           );
         })}
       </ul>
-      <p className="source-note">
-        {fixed?.updatedAt ? <>{stale ? '이전 조회' : '조회'} <time dateTime={new Date(fixed.updatedAt).toISOString()}>{dateTime.format(fixed.updatedAt)}</time> · 지정 경로 기준</>
-          : filePreview ? '도로망 기준 예상 시간' : failed || fixed ? '교통 상황 조회 지연' : '교통 상황 조회 중'}
-        <br />
-        <a href="https://data.seoul.go.kr/dataList/OA-13291/A/1/datasetView.do">서울시 교통 정보</a> ·
-        {' '}<a href="https://routing.openstreetmap.de/about.html">OSRM (FOSSGIS)</a> · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href={`https://www.openstreetmap.org/#map=15/${origin.lat}/${origin.lon}`}>지도 수정</a>
-        {hasKakao && <> · <a href="https://developers.kakaomobility.com/guide/navi-api/start">카카오모빌리티</a></>}
-      </p>
       <DestinationSearch />
       {vmsOpen && <VmsDialog onClose={() => setVmsOpen(false)} />}
     </section>
   );
+}
+
+export function RoadDataCredit() {
+  return <small className="footer-credit">
+    도로 데이터 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>
+    {' · '}<a href={`https://www.openstreetmap.org/#map=15/${origin.lat}/${origin.lon}`}>지도 수정</a>
+  </small>;
 }

@@ -1,10 +1,18 @@
-import {fetchCulture, fetchReservations, fetchBotanic, fetchNotices, fetchNews} from './neighborhood-sources.mjs';
+import {
+  DISTRICT_CALENDAR, GANGSEO_LIBRARY_PROGRAMS, LG_ART_SCHEDULE, SEOUL_LIBRARY_PROGRAMS,
+  fetchBotanic, fetchCulture, fetchDistrictCulture, fetchGangseoLibrary, fetchLgArt,
+  fetchNews, fetchNotices, fetchReservations, fetchSeoulLibrary,
+} from './neighborhood-sources.mjs';
 
 const refreshMs = 3 * 60 * 60 * 1000;
 const retryMs = 10 * 60 * 1000;
 const retentionMs = 7 * 24 * 60 * 60 * 1000;
 const sources = [
   {id: 'botanic', name: '서울식물원', url: 'https://botanicpark.seoul.go.kr/front/board/newsList.do?sCategory=%ED%96%89%EC%82%AC', kind: 'events'},
+  {id: 'district-culture', name: '강서구 문화시설', url: DISTRICT_CALENDAR, kind: 'events'},
+  {id: 'lg-art', name: 'LG아트센터 서울', url: LG_ART_SCHEDULE, kind: 'events'},
+  {id: 'gangseo-library', name: '강서구립도서관', url: GANGSEO_LIBRARY_PROGRAMS, kind: 'events'},
+  {id: 'seoul-library', name: '서울시교육청 강서도서관', url: SEOUL_LIBRARY_PROGRAMS, kind: 'events'},
   {id: 'culture', name: '서울시 문화행사', url: 'https://data.seoul.go.kr/dataList/OA-15486/S/1/datasetView.do', kind: 'events', requiresKey: true},
   {id: 'reservations', name: '강서구 문화행사 예약', url: 'https://data.seoul.go.kr/dataList/OA-12171/S/1/datasetView.do', kind: 'events', requiresKey: true},
   {id: 'notices', name: '강서구 공지', url: 'https://www.gangseo.seoul.kr/gs040101', kind: 'notices'},
@@ -12,6 +20,10 @@ const sources = [
 ];
 const defaults = {
   botanic: fetchBotanic,
+  'district-culture': fetchDistrictCulture,
+  'lg-art': fetchLgArt,
+  'gangseo-library': fetchGangseoLibrary,
+  'seoul-library': fetchSeoulLibrary,
   culture: fetchCulture,
   reservations: fetchReservations,
   notices: fetchNotices,
@@ -31,6 +43,7 @@ function periods(event) {
 function sameEvent(a, b) {
   if (a.reservationId && b.reservationId) return a.reservationId === b.reservationId;
   if (a.id === b.id) return true;
+  if (a.organizerId === b.id || b.organizerId === a.id) return true;
   const place = normalized(a.place);
   return place && place === normalized(b.place)
     && normalized(a.title) === normalized(b.title)
@@ -51,15 +64,16 @@ export function mergeEvents(groups) {
     const previous = merged[index];
     const first = previous.reservation;
     const second = event.reservation;
+    const organizerDated = /^(district-culture|lg-art|gangseo-library|seoul-library):/.test(previous.id);
     const dates = previous.id === event.id
       ? [...new Set([...previous.dates, ...event.dates])].sort()
-      : previous.dates.length ? previous.dates : event.dates;
+      : previous.dates.length || organizerDated ? previous.dates : event.dates;
     merged[index] = {
       ...previous,
       place: previous.place || event.place,
       category: previous.category || event.category,
       dates,
-      range: dates.length ? null : previous.range ?? event.range,
+      range: organizerDated ? previous.range : dates.length ? null : previous.range ?? event.range,
       servicePeriod: previous.servicePeriod ?? event.servicePeriod,
       reservationId: previous.reservationId ?? event.reservationId,
       reservation: first && second ? {
@@ -142,7 +156,7 @@ export function createNeighborhoodReader({now = Date.now, loaders = defaults} = 
   }
 
   return async function readNeighborhood(request, env, cache = globalThis.caches?.default) {
-    const key = env.SEOUL_OPEN_DATA_KEY?.trim() || env.TOPIS_OPEN_DATA_KEY?.trim();
+    const key = env.TOPIS_OPEN_DATA_KEY?.trim() || env.SEOUL_OPEN_DATA_KEY?.trim();
     const section = new URL(request.url).searchParams.get('section');
     const selected = section ? sources.filter(source => source.kind === section) : sources;
     const results = await Promise.all(selected.map(async source => ({

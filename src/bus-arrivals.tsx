@@ -5,8 +5,10 @@ type Route = {
   name: string; direction: string; next: string; type: string; first: string; second: string;
 };
 type BusStop = { id: string; status: 'ok' | 'unavailable'; routes: Route[] };
-type BusData = { fetchedAt: number; source: string | null; stops: BusStop[] };
+type BusData = { fetchedAt: number; stops: BusStop[] };
 type StopInfo = { id: string; name: string; direction: string };
+type BusArrival = { route: Route; message: string; upcoming: boolean; seconds: number };
+const initialArrivalCount = 5;
 
 const groups = [
   { label: '후문', stops: [
@@ -28,7 +30,15 @@ function arrivalSeconds(value: string) {
   const minutes = text.match(/(\d+)\s*분/);
   const seconds = text.match(/(\d+)\s*초/);
   if (minutes || seconds) return Number(minutes?.[1] || 0) * 60 + Number(seconds?.[1] || 0);
-  return /곧 도착|잠시 후|바로 도착|^도착$/.test(text.trim()) ? 0 : Infinity;
+  return /^(곧\s*도착|잠시\s*후|바로\s*도착|도착(?:\s*중)?|진입\s*중)$/.test(text.trim()) ? 0 : Infinity;
+}
+
+function rankArrivals(routes: Route[]) {
+  return routes.flatMap(route => [route.first, route.second].flatMap((message, index) => {
+    const seconds = arrivalSeconds(message);
+    if (!message.trim() || (index === 1 && !Number.isFinite(seconds) && /정보\s*없|운행\s*종료/.test(message))) return [];
+    return [{ route, message, upcoming: index === 1, seconds }];
+  })).sort((a, b) => a.seconds - b.seconds);
 }
 
 export function BusArrivals() {
@@ -42,9 +52,7 @@ export function BusArrivals() {
     label,
     stops: stops.map(stop => {
       const response = results.get(stop.id);
-      const routes = [...(response?.routes ?? [])]
-        .filter(route => normalizeRoute(route.name).includes(query))
-        .sort((a, b) => arrivalSeconds(a.first) - arrivalSeconds(b.first));
+      const routes = (response?.routes ?? []).filter(route => normalizeRoute(route.name).includes(query));
       return { ...stop, status: response?.status, routes };
     }),
   }));
@@ -82,14 +90,14 @@ export function BusArrivals() {
         </label>
       </div>
       <span className="sr-only" role="status">{query ? `${groups[selected].label} 검색 결과 ${matchedCount}건` : ''}</span>
-      <p className="secondary bus-example">{data
-        ? `${failed ? '이전 조회' : '조회'} ${seoulTime.format(data.fetchedAt)}${data.source ? ' · ' + data.source : ''}`
-        : (failed ? '조회 지연' : '조회 중')}</p>
+      <p className="secondary bus-example">{data?.stops.some(stop => stop.status === 'ok')
+        ? `${failed ? '이전 조회' : '조회'} ${seoulTime.format(data.fetchedAt)}`
+        : (data || failed ? '조회 지연' : '조회 중')}</p>
       {visibleGroups.map(({ label, stops }, index) => (
         <div key={label} id={`${id}-panel-${index}`} role="tabpanel" aria-labelledby={`${id}-tab-${index}`}
           tabIndex={0} hidden={selected !== index}>
           <div className="bus-stops">
-            {stops.map(stop => <StopArrivals key={stop.id} stop={stop} headingId={`${id}-stop-${stop.id}`} searching={Boolean(query)} loading={!data && !failed} />)}
+            {stops.map(stop => <StopArrivals key={`${stop.id}:${query}`} stop={stop} headingId={`${id}-stop-${stop.id}`} searching={Boolean(query)} loading={!data && !failed} />)}
           </div>
           <div className="bus-source">
             <a href="https://topis.seoul.go.kr/map/openBusMap.do" target="_blank" rel="noopener noreferrer">TOPIS 실시간 도착 정보<span className="sr-only"> (새 탭)</span></a>
@@ -106,21 +114,28 @@ function StopArrivals({ stop, headingId, searching, loading }: {
 }) {
   const empty = loading ? '조회 중입니다.' : stop.status !== 'ok' ? '도착정보 조회가 지연되고 있습니다.'
     : searching ? '검색 결과가 없습니다.' : '도착정보가 없습니다.';
+  const ranked = rankArrivals(stop.routes);
+  const first = ranked.filter(arrival => Number.isFinite(arrival.seconds)).slice(0, initialArrivalCount);
+  const remaining = ranked.slice(first.length);
   return (
     <section className="bus-stop" aria-labelledby={headingId}>
       <div className="bus-stop-meta"><span>{stop.direction}</span><span>ARS {stop.id}</span></div>
       <h3 id={headingId}>{stop.name}</h3>
-      {stop.routes.length ? (
-        <ul className="bus-routes" role="list">
-          {stop.routes.map((route, index) => (
-            <li key={`${route.name}-${index}`}>
-              <div className="bus-route"><strong data-color={['3', '6'].includes(route.type) ? 'blue' : 'green'}>{route.name}</strong>
-                <span>{route.direction || route.next ? `${route.direction || route.next} 방면` : '방면 정보 없음'}</span></div>
-              <div className="bus-times"><strong>{route.first}</strong><span>다음 {route.second}</span></div>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="secondary bus-empty">{empty}</p>}
+      {first.length > 0 ? <BusArrivalRows arrivals={first} /> : <p className="secondary bus-empty">{ranked.length ? '도착 예정 시간이 없습니다.' : empty}</p>}
+      {remaining.length > 0 && <details className="bus-more">
+        <summary>나머지 {remaining.length}건 보기</summary>
+        <BusArrivalRows arrivals={remaining} />
+      </details>}
     </section>
   );
+}
+
+function BusArrivalRows({ arrivals }: { arrivals: BusArrival[] }) {
+  return <ul className="bus-routes" role="list">
+    {arrivals.map(({ route, message, upcoming }, index) => <li key={`${route.name}-${upcoming}-${index}`}>
+      <div className="bus-route"><strong data-color={['3', '6'].includes(route.type) ? 'blue' : 'green'}>{route.name}</strong>
+        <span>{route.direction || route.next ? `${route.direction || route.next} 방면` : '방면 정보 없음'}</span></div>
+      <div className="bus-times"><strong>{message}</strong>{upcoming && <span>다음 버스</span>}</div>
+    </li>)}
+  </ul>;
 }

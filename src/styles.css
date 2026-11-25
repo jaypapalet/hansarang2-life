@@ -81,7 +81,7 @@ svg { flex: none; }
 .weather-details dd { font-variant-numeric: tabular-nums; font-weight: 690; white-space: nowrap; }
 .weather-photo { display: block; position: absolute; inset: 0 0 0 auto; width: 40%; height: 100%; object-fit: cover; object-position: center 32%; }
 
-.weather + .subway, .subway + .bus, .bus + .road-board { margin-top: 1.9rem; }
+.weather-forecasts + .subway, .subway + .bus, .bus + .road-board { margin-top: 1.9rem; }
 .section-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem .85rem; }
 .stations {
   display: grid;
@@ -104,9 +104,9 @@ svg { flex: none; }
 }
 .arrival-name { line-height: 1.3; word-break: keep-all; overflow-wrap: anywhere; }
 .arrival-times { display: grid; justify-items: end; font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; }
-.arrivals small { display: block; margin-top: .15rem; font-size: .875rem; color: var(--muted); }
+.arrivals small { display: block; max-width: 8em; margin-top: .15rem; color: var(--muted); font-size: .875rem; text-align: end; white-space: normal; overflow-wrap: anywhere; }
 .arrivals strong { font-size: 1.28rem; font-weight: 750; }
-.arrivals strong span { margin-left: .12rem; font-size: .875rem; font-weight: 650; }
+.arrivals .arrival-message { max-width: 8em; font-size: .9375rem; text-align: end; white-space: normal; overflow-wrap: anywhere; }
 .bus {
   --bus-green: #156444;
   --bus-blue: #2b5080;
@@ -155,6 +155,8 @@ svg { flex: none; }
 .bus-route span { word-break: keep-all; overflow-wrap: anywhere; }
 .bus-times { justify-items: end; text-align: end; font-variant-numeric: tabular-nums; }
 .bus-times strong { font-size: .9375rem; font-weight: 720; }
+.bus-more { border-top: 1px solid var(--bus-line); }
+.bus-more summary { min-height: 44px; padding-block: .7rem; color: var(--accent); font-size: .875rem; font-weight: 650; cursor: pointer; }
 .bus-source { display: flex; justify-content: end; }
 .bus-source a { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; }
 
@@ -207,7 +209,7 @@ svg { flex: none; }
   :root { --gutter: 1rem; }
   .main { padding-top: 1rem; }
   .weather-content { padding: 1rem 1.1rem; }
-  .weather + .subway, .subway + .bus, .bus + .road-board { margin-top: 1.45rem; }
+  .weather-forecasts + .subway, .subway + .bus, .bus + .road-board { margin-top: 1.45rem; }
   .life-details { grid-template-columns: minmax(0,1fr); }
 }
 

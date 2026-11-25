@@ -9,7 +9,7 @@ const DATA_GO_KR_EV = 'https://www.data.go.kr/data/15076352/openapi.do';
 const DATA_GO_KR_KMA = 'https://www.data.go.kr/data/15084084/openapi.do';
 const ALERTS_URL = 'https://www.weather.go.kr/w/wnuri-fct2021/weather/warning.do';
 const KMA_PROXY_URL = 'https://k-skill-proxy.nomadamas.org/v1/korea-weather/forecast?nx=58&ny=126';
-const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast?latitude=37.5553&longitude=126.8586&current=temperature_2m,weather_code,is_day&hourly=precipitation_probability&timezone=Asia%2FSeoul&forecast_days=2';
+const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast?latitude=37.5553&longitude=126.8586&current=temperature_2m,apparent_temperature,weather_code,is_day&hourly=temperature_2m,precipitation_probability,weather_code,is_day&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,weather_code&timezone=Asia%2FSeoul&forecast_days=4';
 
 // 기상청 격자 변환 (표준 LCC). 등촌1동 37.5553, 126.8586 → nx 58, ny 126.
 export function toGrid(lat, lon) {
@@ -38,6 +38,42 @@ function kstParts(now) {
 }
 function ymd(p) { return String(p.year) + String(p.month).padStart(2, '0') + String(p.day).padStart(2, '0'); }
 
+function numeric(value) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function temperature(value) {
+  const n = numeric(value);
+  return n !== null && n > -100 && n < 100 ? n : null;
+}
+function probability(value) {
+  const n = numeric(value);
+  return n !== null && n >= 0 && n <= 100 ? n : null;
+}
+function seoulDate(time) { return new Date(time + 9 * 3600000).toISOString().slice(0, 10); }
+function seoulDaytime(time) { const hour = kstParts(time).hour; return hour >= 6 && hour < 18; }
+function validDate(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+}
+function forecastTime(value) {
+  if (typeof value !== 'string') return NaN;
+  const m = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:\d{2})?$/);
+  if (!m || !validDate(m[1]) || +m[2] > 23 || +m[3] > 59 || +(m[4] || 0) > 59) return NaN;
+  return Date.parse(value + (m[5] ? '' : '+09:00'));
+}
+const WMO_CODES = new Set([0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99]);
+function weatherCode(value) { const n = numeric(value); return WMO_CODES.has(n) ? n : null; }
+function vilageCode(values) {
+  const pty = numeric(values.PTY), sky = numeric(values.SKY);
+  if (pty === 1) return 61;
+  if (pty === 2) return 67;
+  if (pty === 3) return 71;
+  if (pty === 4) return 80;
+  return pty !== 0 ? null : sky === 1 ? 0 : sky === 3 ? 2 : sky === 4 ? 3 : null;
+}
+
 // 단기예보 base_time: 02/05/08/11/14/17/20/23시, 발표 10분 뒤부터 사용. 02:10 전이면 전날 23시.
 export function vilageBase(now = Date.now()) {
   const p = kstParts(now);
@@ -60,27 +96,86 @@ async function kmaJson(url) {
   return Array.isArray(items) ? items : items ? [items] : [];
 }
 
-// 단기예보: 현재 시각 이후 가장 가까운 예보 시각의 TMP·POP·SKY·PTY를 쓴다.
-// SKY/PTY를 Open-Meteo weather_code 체계로 바꿔 기존 아이콘을 그대로 쓴다.
+// 현재 시각이 속한 시간부터 최대 12개 예보를 보낸다. SKY/PTY는 WMO 코드로 바꾼다.
 export function parseVilage(items, now = Date.now()) {
-  const p = kstParts(now);
-  const hourStart = Date.UTC(p.year, p.month - 1, p.day, p.hour) - 9 * 3600000;
+  const hourStart = Math.floor(now / 3600000) * 3600000;
   const byTime = new Map();
-  for (const it of items) {
-    const t = Date.parse(String(it.fcstDate).slice(0, 4) + '-' + String(it.fcstDate).slice(4, 6) + '-' + String(it.fcstDate).slice(6) + 'T' + String(it.fcstTime).slice(0, 2) + ':00:00+09:00');
+  for (const it of Array.isArray(items) ? items : []) {
+    if (!it || !/^\d{8}$/.test(String(it.fcstDate)) || !/^\d{2}00$/.test(String(it.fcstTime))) continue;
+    const date = String(it.fcstDate), time = String(it.fcstTime);
+    const t = forecastTime(date.slice(0, 4) + '-' + date.slice(4, 6) + '-' + date.slice(6) + 'T' + time.slice(0, 2) + ':00');
     if (!Number.isFinite(t)) continue;
     if (!byTime.has(t)) byTime.set(t, {});
     byTime.get(t)[it.category] = it.fcstValue;
   }
   const times = [...byTime.keys()].sort((a, b) => a - b);
-  const target = times.find(t => t >= hourStart) ?? times[times.length - 1];
-  if (target === undefined) throw new Error('단기예보 항목 없음');
-  const v = byTime.get(target);
-  const tmp = Number(v.TMP), pop = Number(v.POP), sky = Number(v.SKY), pty = Number(v.PTY);
-  if (!Number.isFinite(tmp) || !Number.isFinite(sky) || !Number.isFinite(pty)) throw new Error('단기예보 항목 부족');
-  const code = pty === 1 ? 61 : pty === 2 ? 67 : pty === 3 ? 71 : pty === 4 ? 80 : sky === 1 ? 0 : sky === 3 ? 2 : 3;
-  return {temperature: tmp, code, isDay: p.hour >= 6 && p.hour < 18,
-    probability: Number.isFinite(pop) ? pop : null, time: new Date(target).toISOString(), source: '기상청'};
+  const hourly = [];
+  const byDate = new Map();
+  const today = seoulDate(now);
+  for (const time of times) {
+    const values = byTime.get(time);
+    const temp = temperature(values.TMP), code = vilageCode(values), pop = probability(values.POP);
+    if (time >= hourStart && temp !== null && code !== null && hourly.length < 12) {
+      hourly.push({time: new Date(time).toISOString(), temperature: temp, code, isDay: seoulDaytime(time), probability: pop});
+    }
+    const date = seoulDate(time);
+    if (date < today) continue;
+    if (!byDate.has(date)) byDate.set(date, {temperatures: [], lows: [], highs: [], codes: [], probabilities: []});
+    const day = byDate.get(date);
+    if (temp !== null) day.temperatures.push(temp);
+    const low = temperature(values.TMN), high = temperature(values.TMX);
+    if (low !== null) day.lows.push(low);
+    if (high !== null) day.highs.push(high);
+    if (code !== null) day.codes.push(code);
+    if (pop !== null) day.probabilities.push(pop);
+  }
+  if (!hourly.length) throw new Error('단기예보 항목 부족');
+  const daily = [...byDate].filter(([, day]) => day.codes.length).slice(0, 4).map(([date, day]) => {
+    // 발표된 최저·최고를 우선한다. 24시간 TMP가 모두 있을 때만 빠진 값을 보충한다.
+    const complete = day.temperatures.length === 24;
+    return {date,
+      low: day.lows.length ? Math.min(...day.lows) : complete ? Math.min(...day.temperatures) : null,
+      high: day.highs.length ? Math.max(...day.highs) : complete ? Math.max(...day.temperatures) : null,
+      code: Math.max(...day.codes), probability: day.probabilities.length ? Math.max(...day.probabilities) : null};
+  });
+  return {...hourly[0], source: '기상청', hourly, daily};
+}
+
+export function parseOpenMeteo(raw, now = Date.now()) {
+  const current = raw?.current;
+  const temp = temperature(current?.temperature_2m), code = weatherCode(current?.weather_code);
+  if (temp === null || code === null) throw new Error('예보 응답 오류');
+  const stamp = forecastTime(current.time);
+  if (!Number.isFinite(stamp) || Math.abs(now - stamp) > 2 * 3600000) throw new Error('예보 지연');
+  const hourStart = Math.floor(now / 3600000) * 3600000;
+  const currentHour = Math.floor(stamp / 3600000) * 3600000;
+  const hours = new Map();
+  let currentProbability = null;
+  for (const [index, time] of (Array.isArray(raw.hourly?.time) ? raw.hourly.time : []).entries()) {
+    const timestamp = forecastTime(time), pop = probability(raw.hourly.precipitation_probability?.[index]);
+    if (!Number.isFinite(timestamp)) continue;
+    if (timestamp === currentHour) currentProbability = pop;
+    const hourlyTemp = temperature(raw.hourly.temperature_2m?.[index]), hourlyCode = weatherCode(raw.hourly.weather_code?.[index]);
+    const isDay = raw.hourly.is_day?.[index];
+    if (timestamp < hourStart || hourlyTemp === null || hourlyCode === null || ![0, 1].includes(isDay)) continue;
+    hours.set(timestamp, {time: new Date(timestamp).toISOString(), temperature: hourlyTemp,
+      code: hourlyCode, isDay: isDay === 1, probability: pop});
+  }
+  const days = new Map();
+  const today = seoulDate(now);
+  for (const [index, date] of (Array.isArray(raw.daily?.time) ? raw.daily.time : []).entries()) {
+    const dailyCode = weatherCode(raw.daily.weather_code?.[index]);
+    if (!validDate(date) || date < today || dailyCode === null) continue;
+    let low = temperature(raw.daily.temperature_2m_min?.[index]), high = temperature(raw.daily.temperature_2m_max?.[index]);
+    if (low !== null && high !== null && low > high) { low = null; high = null; }
+    days.set(date, {date, low, high, code: dailyCode, probability: probability(raw.daily.precipitation_probability_max?.[index])});
+  }
+  const feelsLike = temperature(current.apparent_temperature);
+  return {temperature: temp, code, isDay: [0, 1].includes(current.is_day) ? current.is_day === 1 : seoulDaytime(stamp),
+    probability: currentProbability, time: new Date(stamp).toISOString(), source: 'Open-Meteo',
+    ...(feelsLike !== null ? {feelsLike} : {}),
+    hourly: [...hours].sort(([a], [b]) => a - b).slice(0, 12).map(([, row]) => row),
+    daily: [...days].sort(([a], [b]) => a.localeCompare(b)).slice(0, 4).map(([, row]) => row)};
 }
 
 async function kmaNowTemp(key, grid, now) {
@@ -98,8 +193,9 @@ async function kmaNowTemp(key, grid, now) {
   const url = KMA_VILAGE + '/getUltraSrtNcst?serviceKey=' + key + '&numOfRows=60&pageNo=1&dataType=JSON&base_date=' + ymd(date) + '&base_time=' + base_time + '&nx=' + grid.x + '&ny=' + grid.y;
   const items = await kmaJson(url);
   const t1h = items.find(it => it.category === 'T1H');
-  if (!t1h || !Number.isFinite(Number(t1h.fcstValue))) return null;
-  return {temperature: Number(t1h.fcstValue), time: new Date(Date.UTC(date.year, date.month - 1, date.day, hour) - 9 * 3600000).toISOString()};
+  const temp = temperature(t1h?.obsrValue ?? t1h?.fcstValue);
+  if (temp === null) return null;
+  return {temperature: temp, time: new Date(Date.UTC(date.year, date.month - 1, date.day, hour) - 9 * 3600000).toISOString()};
 }
 
 // 기상특보 목록: 서울(108) 중 서남권·강서구·전 지역에 해당하는 것만 남긴다.
@@ -258,16 +354,7 @@ async function forecast(env) {
     return cond;
   } catch { /* 최후 수단으로 Open-Meteo 사용 */ }
   const raw = await (await upstream(FORECAST_URL)).json();
-  const current = raw.current;
-  const index = raw.hourly.time.indexOf(current.time.slice(0, 13) + ':00');
-  const temp = current.temperature_2m;
-  if (!Number.isFinite(temp) || !Number.isInteger(current.weather_code)) throw new Error('예보 응답 오류');
-  const stamp = Date.parse(current.time + '+09:00');
-  if (!Number.isFinite(stamp) || Math.abs(Date.now() - stamp) > 2 * 3600000) throw new Error('예보 지연');
-  const probability = raw.hourly.precipitation_probability[index];
-  return {temperature: temp, code: current.weather_code, isDay: current.is_day === 1,
-    probability: Number.isFinite(probability) ? probability : null,
-    time: new Date(stamp).toISOString(), source: 'Open-Meteo'};
+  return parseOpenMeteo(raw);
 }
 
 async function warnings(env) {

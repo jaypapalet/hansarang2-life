@@ -5,6 +5,11 @@ const NOTICES_URL = 'https://www.gangseo.seoul.kr/gs040101';
 const NEWS_URL = 'https://www.gangseo.seoul.kr/gs040404';
 const BOTANIC_URL = 'https://botanicpark.seoul.go.kr/front/board/newsView.do?sn=20821';
 const BOTANIC_RESERVATION_ID = 'S261102100634309493';
+export const DISTRICT_CALENDAR = 'https://culture.gangseo.seoul.kr/gsfc/culture/calendar.do?menuNo=800038';
+export const LG_ART_SCHEDULE = 'https://www.lgart.com/product/performance/year';
+export const GANGSEO_LIBRARY_PROGRAMS = 'https://lib.gangseo.seoul.kr/ApplyForParticipate';
+export const SEOUL_LIBRARY_PROGRAMS = 'https://gslib.sen.go.kr/gslib/module/teach/index.do?menu_idx=15&searchCate1=16';
+const GANGSEO_LIBRARY_FEED = 'https://lib.gangseo.seoul.kr/service/culturalLecture/list?libCode=TOL&pageSize=40&pageIndex=1';
 const PAGE_SIZE = 1000;
 const MAX_CULTURE_ROWS = 30000;
 const MAX_RESERVATION_ROWS = 5000;
@@ -139,6 +144,22 @@ function linkedReservationId(value) {
     && reservationLink(id ?? '') ? id : null;
 }
 
+function organizerId(value) {
+  const safe = publicUrl(value);
+  if (!safe) return null;
+  const url = new URL(safe);
+  if (url.hostname === 'culture.gangseo.seoul.kr'
+    && /^\/gsfc\/culture\/(?:[a-z]+\/[a-z]+\/)?view\.do$/.test(url.pathname)) {
+    const id = url.searchParams.get('cultureSn');
+    if (/^\d{1,9}$/.test(id ?? '')) return 'district-culture:' + id;
+  }
+  if (url.hostname === 'www.lgart.com' || url.hostname === 'm.lgart.com') {
+    const id = url.pathname.match(/^\/product\/(?:ko\/)?performance\/(\d{1,9})$/)?.[1];
+    if (id) return 'lg-art:' + id;
+  }
+  return null;
+}
+
 function cultureEvent(row, window) {
   if (text(row.GUNAME, 30) !== '강서구') return null;
   const title = text(row.TITLE);
@@ -150,9 +171,11 @@ function cultureEvent(row, window) {
   if (!url) return null;
   const place = text(row.PLACE, 180);
   const reservationId = linkedReservationId(row.ORG_LINK);
+  const officialId = organizerId(row.ORG_LINK) || organizerId(row.HMPG_ADDR);
   return {
     id: `culture:${detail?.id || fingerprint(`${title}|${range.start}|${range.end}|${place}`)}`,
     ...(reservationId ? {reservationId} : {}),
+    ...(officialId ? {organizerId: officialId} : {}),
     title, category: text(row.CODENAME, 80) || '문화행사', place, url,
     dates: range.start === range.end ? [range.start] : [],
     range: range.start === range.end ? null : range,
@@ -188,7 +211,13 @@ function reservationEvent(row) {
 
 function allowFetch(value) {
   const url = new URL(value);
-  if ([NOTICES_URL, NEWS_URL, BOTANIC_URL].includes(url.href)) return true;
+  if ([NOTICES_URL, NEWS_URL, BOTANIC_URL, GANGSEO_LIBRARY_FEED, SEOUL_LIBRARY_PROGRAMS].includes(url.href)) return true;
+  if (url.origin === 'https://culture.gangseo.seoul.kr' && url.pathname === '/gsfc/culture/calendar.do'
+    && /^\?menuNo=800038&searchDate=20\d{2}-(?:0[1-9]|1[0-2])-01$/.test(url.search)) return true;
+  if (url.origin === 'https://www.lgart.com' && (
+    (url.pathname === '/product/performance/year/search' && /^\?year=20\d{2}$/.test(url.search))
+    || (/^\/product\/ko\/performance\/\d{1,9}\/calendar\/20\d{2}\/(?:[1-9]|1[0-2])$/.test(url.pathname) && !url.search)
+  )) return true;
   if (url.origin === SEOUL_API && /^\/[A-Za-z0-9_-]{1,128}\/json\/(?:culturalEventInfo|GSListPublicReservationCulture)\/\d{1,6}\/\d{1,6}\/$/.test(url.pathname) && !url.search) return true;
   return url.origin === 'https://m.blog.naver.com'
     && /^\/gangseokkachi\/\d{1,20}$/.test(url.pathname) && !url.search;
@@ -218,13 +247,14 @@ async function readText(response, maxBytes) {
   }
 }
 
-async function upstream(value, maxBytes, signal, timeout = 8500) {
+async function upstream(value, maxBytes, {signal, timeout = 8500, accept = 'text/html'} = {}) {
   if (!allowFetch(value)) throw new Error('source_url_not_allowed');
-  const headers = {Accept: 'application/json, text/html;q=0.9'};
+  const headers = {Accept: accept, 'Cache-Control': 'no-cache, no-store'};
   // Naver's public mobile post returns its normal HTML for a browser-compatible UA.
   if (new URL(value).origin !== SEOUL_API) headers['User-Agent'] = 'Mozilla/5.0';
   const response = await fetch(value, {
-    redirect: 'error', cache: 'no-store',
+    // Workers rejects redirect: 'error' before sending the request.
+    redirect: 'manual',
     headers,
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
   });
@@ -250,7 +280,7 @@ function apiKey(key) {
 }
 
 async function seoulPage(key, service, start, end, signal) {
-  const raw = JSON.parse(await upstream(`${SEOUL_API}/${key}/json/${service}/${start}/${end}/`, MAX_JSON_BYTES, signal));
+  const raw = await fetchJson(`${SEOUL_API}/${key}/json/${service}/${start}/${end}/`, signal);
   const body = raw?.[service];
   const code = body?.RESULT?.CODE ?? raw?.RESULT?.CODE;
   if (code === 'INFO-200') return {total: 0, rows: []};
@@ -437,19 +467,199 @@ export async function fetchBotanic() {
   return [parseBotanicEvent(await upstream(BOTANIC_URL, MAX_HTML_BYTES))];
 }
 
+function adjacentMonths(now) {
+  const today = new Date(now + KST_MS);
+  return [-1, 0, 1].map(offset => {
+    const first = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + offset, 1));
+    const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
+    return {start: first.toISOString().slice(0, 10), end: last.toISOString().slice(0, 10)};
+  });
+}
+
+function datedEvent({id, title, category, place, url, range = null, dates = [], time = null, fee = null, reservation = null}) {
+  return {id, title, category, place, url, dates, range, reservation, servicePeriod: null, time, fee};
+}
+
+function districtCalendarEntries(html, month) {
+  assertHtml(html);
+  const page = withoutActiveHtml(html);
+  const dateField = page.match(/<input\b[^>]*\bname="searchDate"[^>]*>/i)?.[0] ?? '';
+  const table = page.match(/<table\b[^>]*\bclass="calendar"[^>]*>[\s\S]*?<\/table\s*>/i)?.[0];
+  if (attribute(dateField, 'value')?.slice(0, 7) !== month || !table) throw new Error('invalid_district_calendar');
+
+  return table.split(/<a\b[^>]*\bclass="target"[^>]*>/i).slice(1).map(item => {
+    const id = item.match(/\bmoveToDetail\('(\d{1,9})'\)/)?.[1];
+    const title = text(item.split('</a>', 1)[0]);
+    const category = text(item.match(/<span\b[^>]*\bclass="label-st2"[^>]*>([\s\S]*?)<\/span>/i)?.[1]);
+    const place = text(item.match(/<span\b[^>]*\bclass="label-st1[^"]*"[^>]*>([\s\S]*?)<\/span>/i)?.[1]).replace(/&ZeroWidthSpace;/g, '');
+    const schedule = item.match(/<strong>\s*(?:(?:공\s*연|전\s*시|행\s*사)\s*)?일(?:\s*시)?\s*<\/strong>\s*<div\b[^>]*>([\s\S]*?)<\/div>/i)?.[1];
+    const dateAndTime = text(schedule).match(/^(\d{4})년 (\d{1,2})월 (\d{1,2})일(?:\([일월화수목금토]\))?\s*(.*)$/);
+    const date = dateAndTime && validDate(+dateAndTime[1], +dateAndTime[2], +dateAndTime[3]);
+    if (!id || !title || !category || !place || date?.slice(0, 7) !== month) throw new Error('invalid_district_calendar_item');
+    return {id, title, category, place, date, time: dateAndTime[4] || null};
+  });
+}
+
+export async function fetchDistrictCulture() {
+  const pages = await Promise.all(adjacentMonths(Date.now()).map(async ({start}) => {
+    const html = await upstream(DISTRICT_CALENDAR + '&searchDate=' + start, MAX_HTML_BYTES);
+    return districtCalendarEntries(html, start.slice(0, 7));
+  }));
+  const events = new Map();
+  for (const item of pages.flat()) {
+    if (!events.has(item.id)) events.set(item.id, {item, dates: new Set()});
+    events.get(item.id).dates.add(item.date);
+  }
+  return [...events.values()].map(({item, dates}) => {
+    const days = [...dates].sort();
+    // The official calendar repeats some programs on every date of their announced period.
+    const isSingleEvent = days.length === 1 && item.category !== '전시';
+    return datedEvent({
+      id: 'district-culture:' + item.id, title: item.title, category: item.category, place: item.place,
+      url: new URL('/gsfc/culture/view.do?menuNo=800038&cultureSn=' + item.id, DISTRICT_CALENDAR).href,
+      dates: isSingleEvent ? days : [], range: isSingleEvent ? null : {start: days[0], end: days.at(-1)},
+      time: item.time,
+    });
+  });
+}
+
+async function fetchJson(url, signal) {
+  return JSON.parse(await upstream(url, MAX_JSON_BYTES, {signal, accept: 'application/json'}));
+}
+
+function lgPerformance(row) {
+  const id = organizerId(row?.DetailsUrl);
+  const title = text(row?.Title && decodeEntities(row.Title).replaceAll('<', '〈').replaceAll('>', '〉'));
+  const day = value => /^\d{8}$/.test(value ?? '') ? validDate(+value.slice(0, 4), +value.slice(4, 6), +value.slice(6, 8)) : null;
+  const start = day(row?.PlayBeginDate);
+  const end = day(row?.PlayEndDate);
+  if (!id?.startsWith('lg-art:') || !title || !start || !end || start > end) return null;
+  return datedEvent({
+    id, title, category: text(row.GenreName, 80) || '공연',
+    place: ['LG아트센터 서울', text(row.Place, 100)].filter(Boolean).join(' '),
+    url: 'https://www.lgart.com/product/performance/' + id.split(':')[1],
+    range: {start, end},
+  });
+}
+
+async function lgPerformanceDates(event, {start, end}, signal) {
+  const [year, month] = start.split('-').map(Number);
+  const id = event.id.split(':')[1];
+  const url = 'https://www.lgart.com/product/ko/performance/' + id + '/calendar/' + year + '/' + month;
+  const data = await fetchJson(url, signal);
+  if (data?.Year !== year || data.Month !== month || !Array.isArray(data.Weeks) || !data.Weeks.every(Array.isArray)) {
+    throw new Error('invalid_lg_performance_calendar');
+  }
+  return data.Weeks.flat().flatMap(day => {
+    const date = day?.IsPlayDay === true ? listedDate(String(day.Date ?? '').slice(0, 10)) : null;
+    return date && date >= start && date <= end && date >= event.range.start && date <= event.range.end ? [date] : [];
+  });
+}
+
+export async function fetchLgArt() {
+  const months = adjacentMonths(Date.now());
+  const years = [...new Set(months.map(({start}) => start.slice(0, 4)))];
+  const schedules = await Promise.all(years.map(async year => {
+    const data = await fetchJson(LG_ART_SCHEDULE + '/search?year=' + year);
+    if (!Array.isArray(data?.Schedule) || !data.Schedule.every(month => Array.isArray(month?.Days))) {
+      throw new Error('invalid_lg_schedule');
+    }
+    return data.Schedule.flatMap(month => month.Days);
+  }));
+  const performances = new Map();
+  const firstMonth = months[0];
+  const lastMonth = months.at(-1);
+  for (const row of schedules.flat()) {
+    const event = lgPerformance(row);
+    if (event && event.range.start <= lastMonth.end && event.range.end >= firstMonth.start) performances.set(event.id, event);
+  }
+  const events = [...performances.values()];
+  // Limit subrequests. Every performance remains in the period list if its session lookup is skipped or fails.
+  const sessions = months.flatMap(month => events.filter(event => event.range.start <= month.end && event.range.end >= month.start)
+    .map(event => ({event, month}))).slice(0, 15);
+  await bounded(22000, async signal => {
+    for (let offset = 0; offset < sessions.length && !signal.aborted; offset += 4) {
+      const batch = sessions.slice(offset, offset + 4);
+      await Promise.all(batch.map(async ({event, month}) => {
+        try {
+          event.dates.push(...await lgPerformanceDates(event, month, signal));
+        } catch {
+          // Keep the official period and link when a specific month's sessions are unavailable.
+        }
+      }));
+    }
+  });
+  for (const event of events) event.dates = [...new Set(event.dates)].sort();
+  return events;
+}
+
+function relevantLibraryEvent(range, months) {
+  return range && range.start <= months.at(-1).end && range.end >= months[0].start;
+}
+
+function libraryEvent(event) {
+  if (event.range && event.range.start === event.range.end) {
+    return datedEvent({...event, dates: [event.range.start], range: null});
+  }
+  return datedEvent(event);
+}
+
+export async function fetchGangseoLibrary() {
+  const response = await fetchJson(GANGSEO_LIBRARY_FEED);
+  const rows = response?.data?.data;
+  if (response?.status !== 'OK' || !Array.isArray(rows)) throw new Error('invalid_gangseo_library_list');
+  const months = adjacentMonths(Date.now());
+  return rows.flatMap(row => {
+    const id = String(row?.leCode ?? '');
+    const group = String(row?.leLGCode ?? '');
+    const title = text(row?.leLName);
+    const range = period(String(row?.leOpenSDateFmt ?? '').replaceAll('.', '-'), String(row?.leOpenEDateFmt ?? '').replaceAll('.', '-'));
+    if (!/^\d{1,9}$/.test(id) || !/^\d{1,9}$/.test(group) || !title || !relevantLibraryEvent(range, months)) return [];
+    const url = new URL('/ApplyForPatricipate/LibCultureProgramDetail?leCode=' + id + '&leLGCode=' + group, GANGSEO_LIBRARY_PROGRAMS).href;
+    const library = text(row.libNameS, 50);
+    const room = text(row.leArea, 150);
+    const place = /도서관|뮤지엄|센터|미술관|박물관/.test(room) || !library || library === '작은'
+      ? room : [library + '도서관', room].filter(Boolean).join(' ');
+    const signupTime = value => Number.isSafeInteger(value) && value > 0 && value < 4_000_000_000
+      ? new Date(value * 1000).toISOString() : null;
+    const fee = /^\d{1,8}$/.test(row.leMoney ?? '') ? (+row.leMoney ? (+row.leMoney).toLocaleString('ko-KR') + '원' : '무료') : null;
+    return [libraryEvent({
+      id: 'gangseo-library:' + id, title, place, category: '도서관 프로그램', url, range,
+      time: text(row.leBeginTime, 100) || null, fee,
+      reservation: {opensAt: signupTime(row.leTakeSDate), closesAt: signupTime(row.leTakeEDate), status: text(row.lectureStatusName, 50) || null, url},
+    })];
+  });
+}
+
+export async function fetchSeoulLibrary() {
+  const html = withoutActiveHtml(await upstream(SEOUL_LIBRARY_PROGRAMS, MAX_HTML_BYTES));
+  if (!/<ul\b[^>]*\bclass="teach_list"/i.test(html)) throw new Error('invalid_seoul_library_list');
+  const months = adjacentMonths(Date.now());
+  return [...html.matchAll(/<a\b([^>]*\bclass="detail-btn"[^>]*)>([\s\S]*?)<\/a\s*>/gi)].flatMap(([, attrs, body]) => {
+    const group = attribute(attrs, 'keyValue1');
+    const id = attribute(attrs, 'keyValue3');
+    const title = text(body.match(/<b\b[^>]*\bclass="title"[^>]*>([\s\S]*?)<\/b>/i)?.[1]);
+    const dates = body.match(/강의기간<\/span>\s*(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/i);
+    const range = dates && period(dates[1], dates[2]);
+    if (!/^\d{1,9}$/.test(id ?? '') || !/^\d{1,9}$/.test(group ?? '') || !title || !relevantLibraryEvent(range, months)) return [];
+    const url = new URL('/gslib/module/teach/detail.do?menu_idx=15&group_idx=' + group + '&teach_idx=' + id + '&category_idx=0&large_category_idx=16', SEOUL_LIBRARY_PROGRAMS).href;
+    return [libraryEvent({id: 'seoul-library:' + id, title, place: '강서도서관', category: '독서문화행사', url, range})];
+  });
+}
+
 export async function fetchNotices() {
   return parseDistrictNotices(await upstream(NOTICES_URL, MAX_HTML_BYTES));
 }
 
 export async function fetchNews() {
   return bounded(23000, async signal => {
-    const items = parseNewsletterList(await upstream(NEWS_URL, MAX_HTML_BYTES, signal));
+    const items = parseNewsletterList(await upstream(NEWS_URL, MAX_HTML_BYTES, {signal}));
     for (let offset = 0; offset < items.length; offset += 2) {
       await Promise.all(items.slice(offset, offset + 2).map(async item => {
         const id = blogPostId(item.url);
         if (!id || signal.aborted) return;
         try {
-          item.publishedOn = parseBlogDate(await upstream(`https://m.blog.naver.com/gangseokkachi/${id}`, MAX_HTML_BYTES, signal, 4500));
+          item.publishedOn = parseBlogDate(await upstream(`https://m.blog.naver.com/gangseokkachi/${id}`, MAX_HTML_BYTES, {signal, timeout: 4500}));
         } catch {
           // The archive still supplies an official title and link if the date cannot be read.
           item.publishedOn = null;
