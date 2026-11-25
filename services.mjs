@@ -1,3 +1,5 @@
+import {refreshHour, weatherSnapshots} from './hourly-snapshot-store.mjs';
+
 const EV_STATIONS = [
   {id: 'PI766096', name: '한사랑2차삼성아파트', operator: '차지비', location: '지하 1층', residentsOnly: true},
   {id: 'PW801041', name: '한사랑2차삼성아파트(SP)', operator: '파워큐브', location: '204동 앞 지상', residentsOnly: true},
@@ -353,8 +355,40 @@ async function forecast(env) {
     cond.via = '보조 경유';
     return cond;
   } catch { /* 최후 수단으로 Open-Meteo 사용 */ }
-  const raw = await (await upstream(FORECAST_URL)).json();
-  return parseOpenMeteo(raw);
+  return openMeteoForecast();
+}
+
+async function openMeteoForecast() {
+  return parseOpenMeteo(await (await upstream(FORECAST_URL)).json());
+}
+
+function fillDailyBounds(conditions, fallback, today) {
+  if (!fallback) return conditions;
+  const days = new Map(conditions.daily.map(day => [day.date, day]));
+  let filled = false;
+  for (const other of fallback.daily) {
+    if (other.date < today || (!days.has(other.date) && other.date !== today)) continue;
+    const day = days.get(other.date) ?? {...other, low: null, high: null};
+    const low = day.low ?? (other.low != null && other.low <= (day.high ?? Infinity) ? other.low : null);
+    const high = day.high ?? (other.high != null && other.high >= (low ?? -Infinity) ? other.high : null);
+    if (low === day.low && high === day.high) continue;
+    days.set(day.date, {...day, low, high});
+    filled = true;
+  }
+  if (!filled) return conditions;
+  const sources = new Set([...(conditions.dailyTemperatureSources ?? []), fallback.source, ...(fallback.dailyTemperatureSources ?? [])]);
+  sources.delete(conditions.source);
+  return {...conditions, daily: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4),
+    dailyTemperatureSources: [...sources]};
+}
+
+async function forecastWithDailyBounds(env, previous) {
+  const conditions = await forecast(env);
+  const today = seoulDate(Date.now());
+  const filled = fillDailyBounds(conditions, previous, today);
+  const day = filled.daily.find(row => row.date === today);
+  if ((day?.low != null && day?.high != null) || filled.source === 'Open-Meteo') return filled;
+  return fillDailyBounds(filled, await openMeteoForecast().catch(() => null), today);
 }
 
 async function warnings(env) {
@@ -371,13 +405,44 @@ async function warnings(env) {
 }
 
 async function weather(env) {
-  const [conditions, alerts] = await Promise.allSettled([forecast(env), warnings(env)]);
+  const [conditions, alerts] = await Promise.allSettled([forecastWithDailyBounds(env), warnings(env)]);
   return {conditions: conditions.status === 'fulfilled' ? conditions.value : null,
     alerts: alerts.status === 'fulfilled' ? alerts.value : null, checkedAt: new Date().toISOString()};
 }
 
-export async function services(kind, env) {
+async function storedWeather(env, options) {
+  const db = env.DB;
+  const snapshots = await weatherSnapshots.readAll(db);
+  const previous = snapshots.get('conditions');
+  const previousConditions = previous?.updatedAt != null ? JSON.parse(previous.entries) : null;
+  const [conditionsSnapshot, alertsSnapshot] = await Promise.all([
+    weatherSnapshots.refreshWhenDue(db, 'conditions', previous, () => forecastWithDailyBounds(env, previousConditions), options),
+    weatherSnapshots.refreshWhenDue(db, 'alerts', snapshots.get('alerts'), () => warnings(env), options),
+  ]);
+  const now = Date.now();
+  const hour = refreshHour(now);
+  const today = seoulDate(now);
+  const conditions = conditionsSnapshot?.updatedAt != null ? JSON.parse(conditionsSnapshot.entries) : null;
+  if (conditions) {
+    conditions.hourly = conditions.hourly.filter(item => Date.parse(item.time) >= hour);
+    conditions.daily = conditions.daily.filter(day => day.date >= today);
+  }
+  const conditionsUpdatedAt = conditionsSnapshot?.updatedAt ?? null;
+  const alertsUpdatedAt = alertsSnapshot?.updatedAt ?? null;
+  const updatedAt = Math.max(conditionsUpdatedAt ?? 0, alertsUpdatedAt ?? 0);
+  return {
+    conditions,
+    alerts: alertsUpdatedAt >= hour ? JSON.parse(alertsSnapshot.entries) : null,
+    checkedAt: updatedAt ? new Date(updatedAt).toISOString() : null,
+    storage: 'd1',
+    conditionsUpdatedAt,
+    conditionsStale: conditions !== null && (conditionsSnapshot.failed === 1 || conditionsUpdatedAt < hour),
+  };
+}
+
+export async function services(kind, env, options) {
   if (!['weather', 'ev'].includes(kind)) throw new Error('Unknown service');
+  if (kind === 'weather' && env?.DB) return storedWeather(env, options);
   const hit = cached.get(kind);
   if (hit?.expires > Date.now()) return hit.value;
   // Cloudflare isolates can outlive the request that created them. Never retain an

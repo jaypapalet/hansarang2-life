@@ -6,7 +6,8 @@ import './weather.css';
 type Hour = { time: string; temperature: number; code: number; isDay: boolean; probability: number | null };
 type Day = { date: string; low: number | null; high: number | null; code: number; probability: number | null };
 type WeatherData = {
-  conditions: (Hour & { source: string; feelsLike?: number | null; hourly?: Hour[]; daily?: Day[] }) | null;
+  conditions: (Hour & { source: string; feelsLike?: number | null; hourly?: Hour[]; daily?: Day[]; dailyTemperatureSources?: string[] }) | null;
+  conditionsStale?: boolean;
 };
 
 const seoul = 'Asia/Seoul';
@@ -51,19 +52,23 @@ function DayForecast({ day, today }: { day: Day; today: string }) {
   return <li>
     <time dateTime={day.date}>{day.date === today ? '오늘' : dailyDate.format(new Date(`${day.date}T12:00:00+09:00`))}</time>
     <span className="day-outlook"><Icon size={20} aria-hidden="true" />{label}</span>
-    <span className="day-range"><span>최저 {day.low == null ? '—' : degrees(day.low)}</span><strong>최고 {day.high == null ? '—' : degrees(day.high)}</strong></span>
+    <span className="day-range"><strong>최고 {day.high == null ? '—' : degrees(day.high)}</strong><span>최저 {day.low == null ? '—' : degrees(day.low)}</span></span>
     {day.probability != null && <span className="forecast-rain"><span className="sr-only">강수 확률 </span>{day.probability}%</span>}
   </li>;
 }
 
+function sourceUrl(source: string) {
+  return source === 'Open-Meteo' ? 'https://open-meteo.com/' : 'https://www.weather.go.kr/';
+}
+
 export function Weather() {
-  const { data, failed } = useLiveData<WeatherData>('/api/weather', 300_000);
+  const { data, failed } = useLiveData<WeatherData>('/api/weather', 3_600_000);
   const now = new Date();
   const today = dateKey.format(now);
   const tomorrow = dateKey.format(now.getTime() + 86_400_000);
-  const current = failed ? null : data?.conditions;
+  const current = data?.conditions;
   const hours = current?.hourly ?? [];
-  const days = current?.daily ?? [];
+  const days = current?.daily?.filter(day => day.date >= today) ?? [];
   const todayForecast = days.find(day => day.date === today);
   const status = data || failed ? '날씨를 불러오지 못했습니다.' : '날씨를 불러오는 중입니다.';
   const forecastStatus = data || failed ? '표시할 예보가 없습니다.' : '예보를 불러오는 중입니다.';
@@ -73,15 +78,15 @@ export function Weather() {
     <section className="weather" aria-labelledby="page-title">
       <div className="weather-content">
         <h1 id="page-title" tabIndex={-1}>오늘 날씨</h1>
-        <p className="weather-place">등촌1동 · <time dateTime={today}>{fullDate.format(now)}</time></p>
+        <p className="weather-place">등촌1동 · <time dateTime={today}>{fullDate.format(now)}</time>{current && (failed || data?.conditionsStale) && ' · 저장된 날씨'}</p>
         {current ? <>
           <div className="weather-current">
             <strong className="temperature" aria-label={`섭씨 ${Math.round(current.temperature)}도`}>{degrees(current.temperature)}</strong>
             <p className="weather-condition"><Icon size={25} aria-hidden="true" />{label}</p>
           </div>
           <dl className="weather-details">
-            {todayForecast?.low != null && <div><dt>최저</dt><dd>{degrees(todayForecast.low)}</dd></div>}
-            {todayForecast?.high != null && <div><dt>최고</dt><dd>{degrees(todayForecast.high)}</dd></div>}
+            <div><dt>최고</dt><dd>{todayForecast?.high == null ? '—' : degrees(todayForecast.high)}</dd></div>
+            <div><dt>최저</dt><dd>{todayForecast?.low == null ? '—' : degrees(todayForecast.low)}</dd></div>
             {current.probability != null && <div><dt>강수 확률</dt><dd>{current.probability}%</dd></div>}
             {current.feelsLike != null && <div><dt>체감</dt><dd>{degrees(current.feelsLike)}</dd></div>}
           </dl>
@@ -103,7 +108,8 @@ export function Weather() {
       </section>
       {current && <details className="source-details forecast-source">
         <summary>날씨 정보 출처</summary>
-        <p>날씨 데이터 <a href={current.source === 'Open-Meteo' ? 'https://open-meteo.com/' : 'https://www.weather.go.kr/'}>{current.source}</a></p>
+        <p>날씨 데이터 <a href={sourceUrl(current.source)}>{current.source}</a></p>
+        {current.dailyTemperatureSources?.map(source => <p key={source}>최고·최저기온 보완 <a href={sourceUrl(source)}>{source}</a></p>)}
       </details>}
     </div>
   </>;

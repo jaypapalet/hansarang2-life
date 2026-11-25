@@ -38,7 +38,7 @@ export default {
     if(path.startsWith('/api/')&&['weather','ev','bus','subway'].includes(kind)){
       try {
         const data=kind==='ev'||kind==='weather'
-          ? await modules['services.mjs'].services(kind,env)
+          ? await modules['services.mjs'].services(kind,env,{context,wait:url.searchParams.get('wait')==='1'})
           : await modules['transit.mjs'].transit(kind,env);
         return privateResponse(data instanceof Response?data:Response.json(data,{headers:{'Cache-Control':'no-store'}}));
       } catch {

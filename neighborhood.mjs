@@ -3,7 +3,7 @@ import {
   fetchBotanic, fetchCulture, fetchDistrictCulture, fetchGangseoLibrary, fetchLgArt,
   fetchNews, fetchNotices, fetchReservations, fetchSeoulLibrary,
 } from './neighborhood-sources.mjs';
-import {eventRefreshHour, readEventSnapshots, refreshEventSnapshot} from './neighborhood-event-store.mjs';
+import {eventSnapshots, refreshHour} from './hourly-snapshot-store.mjs';
 
 const refreshMs = 3 * 60 * 60 * 1000;
 const retryMs = 10 * 60 * 1000;
@@ -161,13 +161,11 @@ export function createNeighborhoodReader({now = Date.now, loaders = defaults} = 
     const sample = source.requiresKey && key === 'sample';
     const id = source.id + (sample ? '/sample' : '/live');
     const currentTime = now();
-    const hour = eventRefreshHour(currentTime);
-    let snapshot = snapshots.get(id);
-    if ((snapshot?.checkedAt == null || snapshot.checkedAt < hour) && (snapshot?.leaseUntil ?? 0) <= currentTime) {
-      const refresh = refreshEventSnapshot(db, id, () => loaders[source.id](key), now).catch(() => snapshot);
-      if (!wait && typeof context?.waitUntil === 'function' && snapshot?.updatedAt != null) context.waitUntil(refresh);
-      else snapshot = await refresh;
-    }
+    const hour = refreshHour(currentTime);
+    const snapshot = await eventSnapshots.refreshWhenDue(db, id, snapshots.get(id), async () => {
+      const entries = await loaders[source.id](key);
+      return Array.isArray(entries) ? entries : null;
+    }, {now, context, wait});
     const checkedAt = snapshot?.checkedAt ?? null;
     const updatedAt = snapshot?.updatedAt ?? null;
     if (updatedAt === null || currentTime - updatedAt >= retentionMs) {
@@ -183,7 +181,7 @@ export function createNeighborhoodReader({now = Date.now, loaders = defaults} = 
     const section = params.get('section');
     const wait = params.get('wait') === '1';
     const selected = section ? sources.filter(source => source.kind === section) : sources;
-    const snapshots = env.DB && section !== 'notices' ? await readEventSnapshots(env.DB) : null;
+    const snapshots = env.DB && section !== 'notices' ? await eventSnapshots.readAll(env.DB) : null;
     const results = await Promise.all(selected.map(async source => ({
       ...source,
       ...await (snapshots && source.kind === 'events'
