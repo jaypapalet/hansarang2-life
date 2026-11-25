@@ -62,6 +62,35 @@ test('TOPIS shares the snapshot and refreshes after ten minutes', async t => {
   assert.equal(requests, 4);
 });
 
+test('fixed routes batch Kakao requests and retain clearly dated values on partial failure', async t => {
+  let now = Date.now();
+  const firstReadAt = now;
+  let calls = 0;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(globalThis, 'fetch', async (requestUrl, options) => {
+    calls += 1;
+    assert.equal(new URL(requestUrl).pathname, '/v1/destinations/directions');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.Authorization, 'KakaoAK test-secret');
+    const query = JSON.parse(options.body);
+    assert.deepEqual(query.destinations.map(place => place.key), destinations.map(place => place.id));
+    return Response.json({routes: query.destinations.map(({key}, index) => ({
+      key, result_code: calls === 2 && index === 0 ? 304 : 0,
+      summary: {distance: 900 + index, duration: 130 + index},
+    }))});
+  });
+  const request = new Request('http://localhost/api/roads/fixed');
+  const get = async () => (await fixedRoads(request, {KAKAO_MOBILITY_REST_API_KEY: 'test-secret'}, fixedRoutes, {origin, destinations})).json();
+  assert.equal((await get()).routes.length, 4);
+  assert.equal((await get()).routes.every(route => route.source === 'kakao' && route.updatedAt === now), true);
+  assert.equal(calls, 1);
+  now += refreshInterval;
+  const partial = await get();
+  assert.equal(calls, 2);
+  assert.equal(partial.routes.find(route => route.id === destinations[0].id).updatedAt, firstReadAt);
+  assert.equal(partial.routes.find(route => route.id === destinations[1].id).updatedAt, now);
+});
+
 function post(body, ip = 'test-client', extra = {}) {
   return new Request('http://localhost/api/roads/directions', {
     method: 'POST',
@@ -73,10 +102,11 @@ function post(body, ip = 'test-client', extra = {}) {
 test('Kakao searches once and requests a fresh estimate for each selection', async t => {
   const calls = [];
   const env = {KAKAO_MOBILITY_REST_API_KEY: 'test-secret'};
-  t.mock.method(globalThis, 'fetch', async (url, options) => {
+  t.mock.method(globalThis, 'fetch', async (requestUrl, options) => {
+    const url = new URL(requestUrl);
     calls.push(url);
     assert.equal(options.headers.Authorization, 'KakaoAK test-secret');
-    assert.equal(options.cache, 'no-store');
+    assert.equal(options.headers['Cache-Control'], 'no-cache, no-store');
     if (url.hostname === 'dapi.kakao.com') {
       assert.equal(url.searchParams.get('query'), '마곡나루역');
       return Response.json({documents: [
