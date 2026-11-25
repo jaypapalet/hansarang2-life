@@ -1,4 +1,4 @@
-import {readFile, readdir, mkdir, writeFile} from 'node:fs/promises';
+import {readFile, mkdir, writeFile} from 'node:fs/promises';
 import {basename} from 'node:path';
 
 // Inline the small, local ESM dependency tree for a single-file Workers deployment.
@@ -17,16 +17,11 @@ async function compile(name) {
   source = source.replace(/\bexport\s+(?=(?:async\s+)?(?:function|const|class)\b)/g,'');
   assembled.set(name,'modules['+JSON.stringify(name)+'] = (()=>{\n'+source+'\nreturn {'+names.join(',')+'};\n})();');
 }
-const types={html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',png:'image/png'};
-const assets={};
-for(const file of await readdir(new URL('./',import.meta.url))){
-  const ext=file.split('.').pop();
-  if(!types[ext])continue;
-  const buffer=await readFile(new URL(file,import.meta.url));
-  assets['/'+file]=[types[ext],ext==='png'?buffer.toString('base64'):buffer.toString('utf8')];
-}
-for(const file of ['services.mjs','transit.mjs','boards.mjs']) await compile(file);
+const clientHtml=await readFile(new URL('dist/client/index.html',import.meta.url),'utf8');
+const roadPlaces=JSON.parse(await readFile(new URL('src/road-places.json',import.meta.url),'utf8'));
+const roadRoutes=JSON.parse(await readFile(new URL('src/topis-routes.json',import.meta.url),'utf8'));
+for(const file of ['services.mjs','transit.mjs','roads.mjs']) await compile(file);
 const runtime=await readFile(new URL('handler.mjs',import.meta.url),'utf8');
 await mkdir(new URL('dist/server/',import.meta.url),{recursive:true});
 await writeFile(new URL('dist/server/index.js',import.meta.url),
-  'const assets='+JSON.stringify(assets)+';\nconst modules={};\n'+[...assembled.values()].join('\n')+'\n'+runtime);
+  'const clientHtml='+JSON.stringify(clientHtml)+';\nconst roadPlaces='+JSON.stringify(roadPlaces)+';\nconst roadRoutes='+JSON.stringify(roadRoutes)+';\nconst modules={};\n'+[...assembled.values()].join('\n')+'\n'+runtime);

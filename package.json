@@ -1,1 +1,29 @@
-{"name":"hansarang-resident","private":true,"type":"module","scripts":{"build":"node build.mjs","start":"node local.mjs"}}
+{
+  "name": "hansarang-resident",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "type-check": "tsc --noEmit",
+    "build": "npm run type-check && vite build && node build.mjs",
+    "start": "node --env-file-if-exists=.env local.mjs",
+    "test": "node --test roads.test.mjs",
+    "update-road-times": "node scripts/update-road-times.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^1.79.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.1",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-singlefile": "^2.3.4"
+  }
+}

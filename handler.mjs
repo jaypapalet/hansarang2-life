@@ -1,4 +1,4 @@
-// "assets" and "modules" are embedded at build time by build.mjs.
+// build.mjs embeds the compiled React page, route data, and server modules.
 function privateResponse(response) {
   const headers = new Headers(response.headers);
   headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
@@ -7,10 +7,15 @@ function privateResponse(response) {
 
 export default {
   async fetch(request, env = {}) {
-    const path=new URL(request.url).pathname;
+    const url=new URL(request.url);
+    const path=url.pathname;
+    if(path==='/api/roads/search'||path==='/api/roads/directions'){
+      if(request.method!=='POST')return privateResponse(new Response(null,{status:405,headers:{Allow:'POST'}}));
+      return privateResponse(await modules['roads.mjs'].kakaoRoads(path.split('/').at(-1),request,env,roadPlaces.origin));
+    }
     if(!['GET','HEAD'].includes(request.method))return privateResponse(new Response(null,{status:405,headers:{Allow:'GET, HEAD'}}));
+    if(path==='/api/roads/fixed')return privateResponse(await modules['roads.mjs'].fixedRoads(request,env,roadRoutes));
     if(path==='/robots.txt')return privateResponse(new Response('User-agent: *\nDisallow: /\n',{headers:{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'public, max-age=3600'}}));
-    if(path.startsWith('/api/boards/'))return privateResponse(await modules['boards.mjs'].boards(request,env));
     const kind=path.slice(5);
     if(path.startsWith('/api/')&&['weather','ev','bus','subway'].includes(kind)){
       try {
@@ -22,10 +27,15 @@ export default {
         return privateResponse(Response.json({error:'upstream_unavailable'},{status:503,headers:{'Cache-Control':'no-store'}}));
       }
     }
-    const item=assets[path==='/'?'/index.html':path];
-    if(!Array.isArray(item))return privateResponse(new Response('Not found',{status:404}));
-    const [type,value]=item;
-    const body=type==='image/png'?Uint8Array.from(atob(value),c=>c.charCodeAt(0)):value;
-    return privateResponse(new Response(request.method==='HEAD'?null:body,{headers:{'Content-Type':type,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'}}));
+    if(!['/','/index.html','/resident','/resident/'].includes(path)){
+      return privateResponse(new Response('Not found',{status:404}));
+    }
+    return privateResponse(new Response(request.method==='HEAD'?null:clientHtml,{
+      headers:{
+        'Content-Type':'text/html; charset=utf-8',
+        'Cache-Control':'no-cache',
+        'X-Content-Type-Options':'nosniff',
+      },
+    }));
   }
 };
