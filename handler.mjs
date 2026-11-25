@@ -9,12 +9,25 @@ export default {
   async fetch(request, env = {}) {
     const url=new URL(request.url);
     const path=url.pathname;
+    if(path==='/api/apartment-notices'||path.startsWith('/api/apartment-notices/')){
+      return privateResponse(await modules['apartment-notices.mjs'].apartmentNotices(request,env));
+    }
     if(path==='/api/roads/search'||path==='/api/roads/directions'){
       if(request.method!=='POST')return privateResponse(new Response(null,{status:405,headers:{Allow:'POST'}}));
       return privateResponse(await modules['roads.mjs'].kakaoRoads(path.split('/').at(-1),request,env,roadPlaces.origin));
     }
     if(!['GET','HEAD'].includes(request.method))return privateResponse(new Response(null,{status:405,headers:{Allow:'GET, HEAD'}}));
     if(path==='/api/roads/fixed')return privateResponse(await modules['roads.mjs'].fixedRoads(request,env,roadRoutes));
+    if(path==='/api/neighborhood'){
+      const headers={'Cache-Control':'no-store','Content-Type':'application/json; charset=utf-8'};
+      const section=url.searchParams.get('section');
+      if(section!==null&&!['events','notices'].includes(section)){
+        return privateResponse(Response.json({error:'invalid_section'},{status:400,headers}));
+      }
+      if(request.method==='HEAD')return privateResponse(new Response(null,{headers}));
+      const data=await modules['neighborhood.mjs'].readNeighborhood(request,env);
+      return privateResponse(Response.json(data,{headers}));
+    }
     if(path==='/robots.txt')return privateResponse(new Response('User-agent: *\nDisallow: /\n',{headers:{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'public, max-age=3600'}}));
     const kind=path.slice(5);
     if(path.startsWith('/api/')&&['weather','ev','bus','subway'].includes(kind)){
@@ -27,7 +40,7 @@ export default {
         return privateResponse(Response.json({error:'upstream_unavailable'},{status:503,headers:{'Cache-Control':'no-store'}}));
       }
     }
-    if(!['/','/index.html','/resident','/resident/'].includes(path)){
+    if(!['/','/index.html','/resident','/resident/','/admin','/admin/'].includes(path)){
       return privateResponse(new Response('Not found',{status:404}));
     }
     return privateResponse(new Response(request.method==='HEAD'?null:clientHtml,{

@@ -1,13 +1,16 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CloudSun, Phone } from 'lucide-react';
+import { ApartmentNotices, NoticeAdmin } from './apartment-notices';
 import { BusArrivals } from './bus-arrivals';
 import complexPhoto from './media/hansarang-complex.webp';
+import { Neighborhood } from './neighborhood';
 import { RoadBoard } from './road-board';
 import './styles.css';
 
 const pages = [
   { id: 'today', label: '오늘', title: '오늘 날씨' },
+  { id: 'neighborhood', label: '동네 소식', title: '동네 소식' },
   { id: 'life', label: '단지 생활', title: '단지 생활' },
 ] as const;
 
@@ -118,29 +121,34 @@ function Today() {
 
 function LocalServices() {
   return (
-    <div className="life-details">
-      <section id="life-charging" tabIndex={-1} className="life-detail" aria-labelledby="charging-title">
-        <h2 id="charging-title">전기차 충전</h2>
-        <dl className="facts">
-          {charging.map(({ name, place, available, total }) => (
-            <div key={name}><dt>{name}<small>{place}</small></dt><dd>{available} / {total}대 사용 가능</dd></div>
-          ))}
-        </dl>
-        <p className="source-note">예시 데이터</p>
-      </section>
-      <section id="life-office" tabIndex={-1} className="life-detail" aria-labelledby="office-title">
-        <h2 id="office-title">관리사무소</h2>
-        <dl className="facts">
-          <div><dt>업무시간</dt><dd>{office.hours}</dd></div>
-          <div><dt>전화</dt><dd><a className="phone" href={office.href}><Phone size={16} aria-hidden="true" />{office.phone}</a></dd></div>
-        </dl>
-      </section>
-    </div>
+    <>
+      <ApartmentNotices />
+      <div className="life-details">
+        <section id="life-charging" tabIndex={-1} className="life-detail" aria-labelledby="charging-title">
+          <h2 id="charging-title">전기차 충전</h2>
+          <dl className="facts">
+            {charging.map(({ name, place, available, total }) => (
+              <div key={name}><dt>{name}<small>{place}</small></dt><dd>{available} / {total}대 사용 가능</dd></div>
+            ))}
+          </dl>
+          <p className="source-note">예시 데이터</p>
+        </section>
+        <section id="life-office" tabIndex={-1} className="life-detail" aria-labelledby="office-title">
+          <h2 id="office-title">관리사무소</h2>
+          <dl className="facts">
+            <div><dt>업무시간</dt><dd>{office.hours}</dd></div>
+            <div><dt>전화</dt><dd><a className="phone" href={office.href}><Phone size={16} aria-hidden="true" />{office.phone}</a></dd></div>
+          </dl>
+        </section>
+      </div>
+    </>
   );
 }
 
 function App() {
   const hash = useSyncExternalStore(subscribeToPage, getHash);
+  const admin = ['/admin', '/admin/'].includes(window.location.pathname);
+  const home = admin ? '/' : '';
   const [, route, topic] = hash.split('/');
   const page = pages.find(item => item.id === route) ?? pages[0];
   const lifeTopic = page.id === 'life' && lifeTopics.some(id => id === topic) ? topic : undefined;
@@ -169,18 +177,17 @@ function App() {
       }}>본문으로 건너뛰기</a>
       <header className="site-header">
         <div className="frame masthead">
-          <a className="brand" href="#/today">한사랑2차 생활정보</a>
+          <a className="brand" href={`${home}#/today`}>한사랑2차 생활정보</a>
           <nav className="main-nav" aria-label="주요 메뉴">
             {pages.map(({ id, label }) => (
-              <a key={id} href={`#/${id}`} aria-current={page.id === id ? 'page' : undefined}>{label}</a>
+              <a key={id} href={`${home}#/${id}`} aria-current={!admin && page.id === id ? 'page' : undefined}>{label}</a>
             ))}
           </nav>
         </div>
       </header>
       <main id="main" className="frame main" tabIndex={-1} ref={main}>
-        {page.id !== 'today' && <h1 id="page-title" className="page-title" tabIndex={-1}>{page.title}</h1>}
-        {page.id === 'today' && <Today />}
-        {page.id === 'life' && <LocalServices />}
+        {admin || page.id !== 'today' ? <h1 id="page-title" className="page-title" tabIndex={-1}>{admin ? '아파트 공지 관리' : page.title}</h1> : null}
+        {admin ? <NoticeAdmin /> : page.id === 'today' ? <Today /> : page.id === 'neighborhood' ? <Neighborhood /> : <LocalServices />}
       </main>
       <footer className="frame footer">한사랑2차 입주민 생활정보</footer>
     </>

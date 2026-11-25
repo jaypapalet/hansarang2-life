@@ -20,7 +20,7 @@ async function compile(name) {
 const clientHtml=await readFile(new URL('dist/client/index.html',import.meta.url),'utf8');
 const roadPlaces=JSON.parse(await readFile(new URL('src/road-places.json',import.meta.url),'utf8'));
 const roadRoutes=JSON.parse(await readFile(new URL('src/topis-routes.json',import.meta.url),'utf8'));
-for(const file of ['services.mjs','transit.mjs','roads.mjs']) await compile(file);
+for(const file of ['services.mjs','transit.mjs','roads.mjs','neighborhood.mjs','apartment-notices.mjs']) await compile(file);
 const runtime=await readFile(new URL('handler.mjs',import.meta.url),'utf8');
 await mkdir(new URL('dist/server/',import.meta.url),{recursive:true});
 await writeFile(new URL('dist/server/index.js',import.meta.url),

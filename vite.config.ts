@@ -7,6 +7,10 @@ export default defineConfig({
   build: { outDir: 'dist/client' },
   server: {
     proxy: {
+      '/api/apartment-notices': {
+        target: 'http://127.0.0.1:4189',
+        changeOrigin: false,
+      },
       '/api': {
         target: 'http://127.0.0.1:4189',
         changeOrigin: true,
