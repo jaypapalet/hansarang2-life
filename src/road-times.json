@@ -1,0 +1,25 @@
+{
+  "calculatedAt": "2026-11-25T01:45:34.698Z",
+  "estimates": [
+    {
+      "id": "magongnaru",
+      "seconds": 340.8,
+      "meters": 4618.8
+    },
+    {
+      "id": "gimpo",
+      "seconds": 652.3,
+      "meters": 6785.8
+    },
+    {
+      "id": "yeouido",
+      "seconds": 562.8,
+      "meters": 7539.9
+    },
+    {
+      "id": "hongik",
+      "seconds": 526.6,
+      "meters": 7824.8
+    }
+  ]
+}

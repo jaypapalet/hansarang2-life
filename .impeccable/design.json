@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-25T01:49:23.754Z",
+  "title": "한사랑2차 생활정보 샘플",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "파란 강조색"
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "화면 제목",
+        "purpose": "현재 탭의 이름"
+      },
+      "section": {
+        "displayName": "섹션 제목",
+        "purpose": "날씨, 교통수단, 단지 시설"
+      }
+    },
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "42rem"
+      },
+      {
+        "name": "stacked-nav",
+        "value": "34rem"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "주요 메뉴",
+      "kind": "nav",
+      "refersTo": "tab-selected",
+      "description": "현재 메뉴를 파란색 밑줄로 표시한다.",
+      "html": "<nav class=\"main-nav\" aria-label=\"주요 메뉴\"><a href=\"#/today\" aria-current=\"page\">오늘</a><a href=\"#/life\">단지 생활</a></nav>",
+      "css": ".main-nav { display: flex; align-items: stretch; gap: 1.3rem; }\n.main-nav a {\n  display: grid;\n  place-items: center;\n  min-block-size: 3.65rem;\n  min-inline-size: 44px;\n  border-bottom: 2px solid transparent;\n  color: #4e5c6b;\n  font-weight: 650;\n  text-align: center;\n  text-decoration: none;\n  word-break: keep-all;\n}\n.main-nav a:hover, .main-nav a[aria-current=\"page\"] { color: #214c85; }\n.main-nav a[aria-current=\"page\"] { border-color: #214c85; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "날씨와 교통은 첫 화면에서, 세부 정보는 독립된 탭에서",
+    "overview": "오늘 날씨를 본문 너비로 보여주고, 증미역과 등촌역을 같은 폭의 두 열에 놓는다.",
+    "keyCharacteristics": [
+      "날씨와 단지 전경이 본문 너비를 채운다.",
+      "모바일에서도 두 역의 도착 시간을 나란히 읽는다.",
+      "단지에서 주요 목적지까지의 자동차 예상 시간과 길찾기를 제공한다."
+    ]
+  }
+}
