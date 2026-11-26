@@ -19,8 +19,8 @@ npm start
 
 | 구성 | 기술과 위치 |
 | --- | --- |
-| 주민 화면 | `src/`의 React, TypeScript, CSS. Vite가 화면과 사진·글꼴을 `dist/client/index.html`에 묶는다. 기본 주소는 `/`이며 기존 `/resident/` 주소에서도 같은 화면을 연다. |
-| 서버 | JavaScript ES 모듈로 만든 Cloudflare Worker. `build.mjs`가 화면과 서버 API를 `dist/server/index.js`에 묶는다. `local.mjs`는 Node.js에서 같은 Worker를 실행한다. |
+| 주민 화면 | `src/`의 React, TypeScript, CSS. Vite가 화면과 글꼴을 `dist/client/index.html`에 묶는다. 단지 전경 사진은 오늘 탭을 열 때 불러온다. 기본 주소는 `/`이며 기존 `/resident/` 주소에서도 같은 화면을 연다. |
+| 서버 | JavaScript ES 모듈로 만든 Cloudflare Worker. `build.mjs`가 화면과 단지 전경 사진, 서버 API를 `dist/server/index.js`에 묶는다. `local.mjs`는 Node.js에서 같은 Worker를 실행한다. |
 | 호스팅 | ChatGPT Sites. 기존 프로젝트 ID는 `.openai/hosting.json`에 있다. |
 | 도로 정보 | 지정 경로는 OSRM 기준 경로와 TOPIS 구간 속도를 쓴다. 목적지는 카카오맵에서 찾고 카카오모빌리티로 거리와 소요 시간을 조회한다. [도로 전광판 상세](ROADS.md) |
 
@@ -30,7 +30,7 @@ npm start
 
 동네 소식 탭에서 행사 일정과 구청 소식을 확인한다. 게시판에서 최근에 수집한 공지·까치뉴스의 제목을 검색할 수 있다. 서버가 [서울시 문화행사](https://data.seoul.go.kr/dataList/OA-15486/S/1/datasetView.do), [강서구 문화행사 예약](https://data.seoul.go.kr/dataList/OA-12171/S/1/datasetView.do), [서울식물원 행사 공지](https://botanicpark.seoul.go.kr/front/board/newsView.do?sn=20821)를 읽는다. 예약 이용기간만 있는 행사는 목록에 두고, 확인된 운영일에만 달력에 표시한다.
 
-[강서구 문화시설](https://culture.gangseo.seoul.kr/gsfc/culture/calendar.do?menuNo=800038), [LG아트센터 서울](https://www.lgart.com/product/performance/year), [강서구립도서관](https://lib.gangseo.seoul.kr/ApplyForParticipate), [서울시교육청 강서도서관](https://gslib.sen.go.kr/gslib/module/teach/index.do?menu_idx=15&searchCate1=16)의 공개 일정도 읽는다. 이 출처는 지난달부터 다음 달까지의 일정을 가져온다. 회차가 확인된 공연과 날짜가 확정된 프로그램은 달력에 표시한다. 전시처럼 운영 기간을 안내하는 경우에는 기간 목록과 공식 링크를 표시한다.
+[강서구 문화시설](https://culture.gangseo.seoul.kr/gsfc/culture/calendar.do?menuNo=800038), [LG아트센터 서울](https://www.lgart.com/product/performance/year), [강서구립도서관](https://lib.gangseo.seoul.kr/ApplyForParticipate), [서울시교육청 강서도서관](https://gslib.sen.go.kr/gslib/module/teach/index.do?menu_idx=15&searchCate1=16)의 공개 일정도 읽는다. 이 출처는 지난달부터 다음 달까지의 일정을 가져온다. 회차나 날짜가 확정된 일정은 달력에 점으로 표시한다. 기간만 공개된 행사도 선택한 날짜가 기간에 포함되면 같은 목록에 보여준다.
 
 접수가 끝난 행사는 달력과 월별 목록 아래의 **접수 마감**에서 펼쳐 볼 수 있다.
 
@@ -38,7 +38,7 @@ npm start
 
 행사 일정은 공지에 쓰는 D1 데이터베이스의 `neighborhood_event_snapshots`에 출처별로 저장한다. 각 출처는 시간대마다 한 번 수집을 시도하고, 실패하면 마지막으로 받은 일정을 최대 7일간 보여준다. 주민이 동네 소식을 열면 저장된 일정을 먼저 읽는다. 구청 공지·까치뉴스는 3시간 동안 기존 조회 결과를 재사용한다.
 
-GitHub Actions의 **Refresh neighborhood events**는 매시 17분에 운영 주소로 갱신 요청을 보내고 DB에서 그 시간대의 수집 결과를 확인한다. Actions에서 이 작업을 수동으로 실행할 수도 있다. 예약 실행이 중단되면 그 시간대에 동네 소식을 처음 여는 요청에서 갱신한다.
+GitHub Actions의 **Refresh neighborhood events and weather**는 매시 17분에 운영 주소로 행사와 날씨 갱신을 요청하고 D1에 저장한 결과를 확인한다. Actions에서 이 작업을 수동으로 실행할 수도 있다. 예약 실행이 중단되면 해당 시간대에 각 화면을 처음 열 때 갱신한다. 날씨의 최고·최저기온은 서울 날짜별로 유지하며, 최신 예보에 빠진 수치는 같은 날짜에 저장한 값을 이어서 쓴다.
 
 ### 아파트 공지 관리
 

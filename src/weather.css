@@ -1,5 +1,9 @@
+.weather[data-loading] .weather-current { min-block-size: clamp(2.8rem, 5vw, 4rem); }
+.weather[data-loading] .weather-details-loading { min-block-size: 1.5em; }
 .weather-forecasts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem; margin-top: 1.35rem; }
 .weather-forecasts h2 { margin-bottom: .55rem; font-size: 1.17rem; }
+.hour-forecast-loading { min-block-size: 7.5rem; }
+.day-forecast-loading { min-block-size: 10.625rem; }
 .hour-forecast, .day-forecast { padding: 0; list-style: none; border-block: 1px solid var(--line); }
 .hour-forecast { position: relative; display: flex; overflow-x: auto; padding-block: .65rem; }
 .hour-forecast li { display: grid; flex: 1 0 5rem; justify-items: center; align-content: start; gap: .25rem; padding-inline: .4rem; white-space: nowrap; }
@@ -19,8 +23,13 @@
 .forecast-source > p { padding-bottom: .65rem; }
 
 @media (max-width: 30rem) {
+  .day-forecast-loading { min-block-size: 17rem; }
   .hour-forecast li { flex-basis: 4.35rem; }
   .day-forecast li { grid-template-columns: minmax(0, 1fr) auto; }
   .day-outlook { grid-row: 2; }
   .day-forecast .forecast-rain { grid-column: 2; }
+}
+
+@media (max-width: 34rem) {
+  .weather[data-loading] .weather-details-loading { min-block-size: calc(1.5em + 1.2rem + 1px); }
 }

@@ -1,4 +1,4 @@
-name: Refresh neighborhood events
+name: Refresh neighborhood events and weather
 
 on:
   schedule:
@@ -36,4 +36,30 @@ jobs:
             if [[ "$attempt" != 3 ]]; then sleep 12; fi
           done
           jq -c '[.sources[]? | {id, state, checkedAt}]' "$snapshot" || true
+          exit 1
+
+  weather:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Refresh and verify the saved weather
+        shell: bash
+        run: |
+          snapshot="$(mktemp)"
+          trap 'rm -f "$snapshot"' EXIT
+          for attempt in 1 2 3; do
+            hour="$(( $(date -u +%s) / 3600 * 3600000 ))"
+            today="$(TZ=Asia/Seoul date +%F)"
+            if curl --fail --silent --show-error --max-time 40 --output "$snapshot" \
+              'https://hansarang2.jaypapa.kr/api/weather?wait=1' &&
+              jq -e --argjson hour "$hour" --arg today "$today" '
+                .storage == "d1" and .conditionsUpdatedAt >= $hour and .conditionsStale == false and
+                any(.conditions.daily[]?; .date == $today and (.low | type) == "number" and (.high | type) == "number")
+              ' "$snapshot" >/dev/null; then
+              jq -r --arg today "$today" '.conditions.daily[] | select(.date == $today) | "Verified weather in D1: \(.high) / \(.low) °C on \(.date)."' "$snapshot"
+              exit 0
+            fi
+            if [[ "$attempt" != 3 ]]; then sleep 12; fi
+          done
+          jq -c '{storage, conditionsUpdatedAt, conditionsStale}' "$snapshot" || true
           exit 1

@@ -52,3 +52,71 @@ test('without an official key, Makka serves fresh stops and rejects stale respon
   assert.deepEqual(result.stops.filter(stop => stop.status === 'unavailable').map(stop => stop.id), ['16251', '16003']);
   assert.equal(result.stops.find(stop => stop.id === '16252').routes[0].first, '곧 도착');
 });
+
+test('subway requests use the official endpoint without following redirects', async t => {
+  const stations = [];
+  t.mock.method(globalThis, 'fetch', async (input, options) => {
+    const url = new URL(input);
+    const path = url.pathname.split('/');
+    assert.equal(url.origin, 'http://swopenapi.seoul.go.kr');
+    assert.equal(options.redirect, 'manual');
+    assert.equal(decodeURIComponent(path[3]), 'test/key');
+    stations.push(decodeURIComponent(path[8]));
+    return path[5] === 'realtimePosition'
+      ? Response.json({realtimePositionList: []})
+      : Response.json({realtimeArrivalList: []});
+  });
+  const {transit} = await import('./transit.mjs?official-subway');
+  const result = await transit('subway', {SEOUL_SUBWAY_KEY: ' test/key '});
+  assert.equal(result.status, 'ok');
+  assert.equal(result.source, '서울 열린데이터광장 공식 API');
+  assert.deepEqual(stations, ['가양', '증미', '등촌', '염창', '9호선']);
+});
+
+test('Today requests only nearby arrivals and keeps the full subway response separate', async t => {
+  const requested = [];
+  t.mock.method(globalThis, 'fetch', async input => {
+    const url = new URL(input);
+    assert.equal(url.origin, 'https://subway-live.com');
+    const station = decodeURIComponent(url.pathname.split('/').at(-1));
+    const position = url.pathname.includes('realtimePosition');
+    requested.push(station);
+    const observed = new Date().toISOString();
+    return position
+      ? Response.json({realtimePositionList: [{statnNm: '증미', subwayId: '1009', statnTnm: '개화', trainNo: '9010', recptnDt: observed}]})
+      : Response.json({realtimeArrivalList: [{statnNm: station, subwayId: '1009', bstatnNm: '개화', barvlDt: 120, btrainNo: '9010', recptnDt: observed}]});
+  });
+  const {transit} = await import('./transit.mjs?nearby');
+  const today = await transit('subway', {}, {arrivalsOnly: true});
+  assert.deepEqual(requested, ['증미', '등촌']);
+  assert.equal(today.status, 'ok');
+  assert.deepEqual(today.arrivals.map(row => row.station), ['증미', '등촌']);
+
+  requested.length = 0;
+  const full = await transit('subway');
+  assert.deepEqual(requested, ['가양', '증미', '등촌', '염창', '9호선']);
+  assert.equal(full.trains[0].train, '9010');
+  assert.equal(await transit('subway', {}, {arrivalsOnly: true}), today);
+});
+
+test('nearby official arrivals use the public fallback if both stations fail', async t => {
+  const requested = [];
+  const warning = t.mock.method(console, 'warn', () => {});
+  t.mock.method(globalThis, 'fetch', async input => {
+    const url = new URL(input);
+    assert.match(url.pathname, /realtimeStationArrival/);
+    requested.push([url.hostname, decodeURIComponent(url.pathname.split('/').at(-1))]);
+    return url.hostname === 'swopenapi.seoul.go.kr'
+      ? new Response(null, {status: 503})
+      : Response.json({realtimeArrivalList: []});
+  });
+  const {transit} = await import('./transit.mjs?nearby-official');
+  const result = await transit('subway', {SEOUL_SUBWAY_KEY: 'test'}, {arrivalsOnly: true});
+  assert.deepEqual(requested, [
+    ['swopenapi.seoul.go.kr', '증미'], ['swopenapi.seoul.go.kr', '등촌'],
+    ['subway-live.com', '증미'], ['subway-live.com', '등촌'],
+  ]);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.positionFailed, false);
+  assert.deepEqual(warning.mock.calls[0].arguments[1], ['HTTP 503', 'HTTP 503']);
+});

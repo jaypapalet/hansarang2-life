@@ -17,11 +17,16 @@ async function compile(name) {
   source = source.replace(/\bexport\s+(?=(?:async\s+)?(?:function|const|class)\b)/g,'');
   assembled.set(name,'modules['+JSON.stringify(name)+'] = (()=>{\n'+source+'\nreturn {'+names.join(',')+'};\n})();');
 }
-const clientHtml=await readFile(new URL('dist/client/index.html',import.meta.url),'utf8');
+const clientDirectory = new URL('dist/client/', import.meta.url);
+const clientHtml = await readFile(new URL('index.html', clientDirectory), 'utf8');
+const clientManifest = JSON.parse(await readFile(new URL('.vite/manifest.json', clientDirectory), 'utf8'));
+const complexPhotoFile = clientManifest['src/media/hansarang-complex.webp'].file;
+const photoBytes = await readFile(new URL(complexPhotoFile, clientDirectory));
+const clientPhoto = {path: '/' + complexPhotoFile, base64: photoBytes.toString('base64'), size: photoBytes.length};
 const roadPlaces=JSON.parse(await readFile(new URL('src/road-places.json',import.meta.url),'utf8'));
 const roadRoutes=JSON.parse(await readFile(new URL('src/topis-routes.json',import.meta.url),'utf8'));
 for(const file of ['services.mjs','transit.mjs','roads.mjs','boards.mjs','neighborhood.mjs','apartment-notices.mjs']) await compile(file);
 const runtime=await readFile(new URL('handler.mjs',import.meta.url),'utf8');
 await mkdir(new URL('dist/server/',import.meta.url),{recursive:true});
 await writeFile(new URL('dist/server/index.js',import.meta.url),
-  'const clientHtml='+JSON.stringify(clientHtml)+';\nconst roadPlaces='+JSON.stringify(roadPlaces)+';\nconst roadRoutes='+JSON.stringify(roadRoutes)+';\nconst modules={};\n'+[...assembled.values()].join('\n')+'\n'+runtime);
+  'const clientHtml='+JSON.stringify(clientHtml)+';\nconst clientPhoto='+JSON.stringify(clientPhoto)+';\nconst roadPlaces='+JSON.stringify(roadPlaces)+';\nconst roadRoutes='+JSON.stringify(roadRoutes)+';\nconst modules={};\n'+[...assembled.values()].join('\n')+'\n'+runtime);

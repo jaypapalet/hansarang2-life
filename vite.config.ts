@@ -3,8 +3,8 @@ import react from '@vitejs/plugin-react';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
 export default defineConfig({
-  plugins: [react(), viteSingleFile()],
-  build: { outDir: 'dist/client' },
+  plugins: [react(), viteSingleFile({ overrideConfig: { base: '/' } })],
+  build: { outDir: 'dist/client', manifest: true },
   server: {
     proxy: {
       '/api/apartment-notices': {

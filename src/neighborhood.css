@@ -40,11 +40,12 @@
 .nb-day-dot { display: inline-block; flex: none; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
 .nb-calendar-note { display: flex; align-items: center; gap: .45rem; border-top: 1px solid var(--line); padding-block: .6rem; color: var(--muted); font-size: .8125rem; }
 .nb-agenda { min-width: 0; padding-top: 1rem; }
+.nb-agenda[data-loading] { min-block-size: 14rem; }
 .nb-agenda > h3 { font-size: 1.1rem; }
 .neighborhood .nb-event-list { margin-top: .55rem; }
-.nb-event { padding-block: .65rem .35rem; border-top: 1px solid var(--line); }
+.nb-event { padding-block: .85rem .3rem; border-top: 1px solid var(--line); }
 .nb-event h4 { word-break: keep-all; overflow-wrap: anywhere; }
-.nb-event-label { margin-bottom: .2rem; color: var(--accent); font-size: .875rem; font-weight: 650; }
+.nb-event-date { margin-top: .25rem; color: var(--accent); font-size: .875rem; line-height: 1.5; font-weight: 650; word-break: keep-all; overflow-wrap: anywhere; }
 .nb-event .nb-meta { margin-top: .25rem; }
 .nb-reservation { margin-top: .3rem; font-size: .875rem; font-weight: 650; color: var(--accent); }
 .nb-event-links { display: flex; flex-wrap: wrap; gap: 0 1rem; }
@@ -52,7 +53,6 @@
 .nb-empty { padding-block: .75rem; color: var(--muted); font-size: .9375rem; }
 .nb-extra-events { margin-top: 1rem; }
 .nb-extra-events > h4 { color: var(--muted); font-size: .875rem; font-weight: 650; }
-.nb-extra-events > .nb-meta { margin-top: .25rem; font-size: .8125rem; }
 .nb-closed-events { margin-top: 1rem; border-top: 1px solid var(--line); }
 .nb-closed-events > summary {
   display: flex;

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {openLocalNoticeDatabase} from './apartment-notices-local.mjs';
 import {parseOpenMeteo, parseVilage} from './services.mjs';
 
 const now = Date.parse('2026-11-25T16:30:00+09:00');
@@ -135,13 +136,14 @@ const noWarnings = () => new Response('<p>특보 내용 : 현재 발효 중인 �
 let freshImport = 0;
 async function weatherService() { return (await import('./services.mjs?weather-test=' + ++freshImport)).services; }
 
-test('the official KMA path retains forecast rows while using its current observation', async t => {
+test('the official KMA path fills the missing low from a full-day forecast without overriding the high', async t => {
   t.mock.method(Date, 'now', () => now);
   t.mock.method(globalThis, 'fetch', async requestUrl => {
     const url = new URL(requestUrl);
     if (url.pathname.endsWith('/getVilageFcst')) return kmaResponse(villageHour('2026-11-25', 16, {TMX: '11'}));
     if (url.pathname.endsWith('/getUltraSrtNcst')) return kmaResponse([{category: 'T1H', obsrValue: '4.2'}]);
     if (url.pathname.endsWith('/getWthrWrnList')) return kmaResponse([{title: '서울 서남권 호우주의보'}]);
+    if (url.hostname === 'api.open-meteo.com') return Response.json(meteo());
     assert.fail('unexpected weather source');
   });
   const result = await (await weatherService())('weather', {DATA_GO_KR_KEY: 'fixture'});
@@ -149,7 +151,7 @@ test('the official KMA path retains forecast rows while using its current observ
   assert.equal(result.conditions.temperature, 4.2);
   assert.equal(result.conditions.hourly[0].temperature, 8);
   assert.equal(result.conditions.daily[0].high, 11);
-  assert.equal(result.conditions.daily[0].low, null);
+  assert.equal(result.conditions.daily[0].low, 2);
   assert.equal(Object.hasOwn(result.conditions, 'via'), false);
   assert.deepEqual(result.alerts, ['호우주의보']);
 });
@@ -206,4 +208,66 @@ test('all forecast-source failures leave independently available warnings intact
   assert.equal(result.conditions, null);
   assert.deepEqual(result.alerts, []);
   assert.ok(Number.isFinite(Date.parse(result.checkedAt)));
+});
+
+test('D1 reuses hourly weather and retains the same Seoul date low after its forecast slot', async t => {
+  const DB = openLocalNoticeDatabase(':memory:');
+  t.after(() => DB.close());
+  let time = now;
+  let forecastCalls = 0;
+  let fallbackCalls = 0;
+  let unavailable = false;
+  t.mock.method(Date, 'now', () => time);
+  t.mock.method(globalThis, 'fetch', async requestUrl => {
+    const url = new URL(requestUrl);
+    if (url.hostname === 'www.weather.go.kr') return noWarnings();
+    if (url.hostname === 'api.open-meteo.com') {
+      fallbackCalls++;
+      throw new Error('Daily fallback unavailable');
+    }
+    forecastCalls++;
+    if (unavailable) throw new Error('Forecast unavailable');
+    if (time === now) return kmaResponse([
+      ...villageHour('2026-11-25', 6, {TMN: '-2'}),
+      ...villageHour('2026-11-25', 16, {TMX: '11'}),
+    ]);
+    if (time >= Date.parse('2026-11-26T00:00:00+09:00')) {
+      return kmaResponse(villageHour('2026-11-26', 0, {TMX: '9'}));
+    }
+    return kmaResponse(villageHour('2026-11-25', 17, {TMX: '12'}));
+  });
+
+  const getWeather = await weatherService();
+  const first = await getWeather('weather', {DB});
+  assert.equal(first.storage, 'd1');
+  assert.equal(first.conditions.daily[0].low, -2);
+  assert.deepEqual(await (await weatherService())('weather', {DB}), first);
+  assert.equal(forecastCalls, 1);
+
+  time += hour;
+  const tasks = [];
+  const previous = await getWeather('weather', {DB}, {context: {waitUntil(task) { tasks.push(task); }}});
+  assert.equal(previous.conditionsStale, true);
+  assert.equal(previous.conditions.daily[0].low, -2);
+  await Promise.all(tasks);
+
+  const updated = await getWeather('weather', {DB});
+  assert.equal(updated.conditionsStale, false);
+  assert.equal(updated.conditionsUpdatedAt, time);
+  assert.equal(updated.conditions.daily[0].low, -2);
+  assert.equal(updated.conditions.daily[0].high, 12);
+  assert.equal(forecastCalls, 2);
+  assert.equal(fallbackCalls, 0);
+
+  time += hour;
+  unavailable = true;
+  const stale = await getWeather('weather', {DB}, {wait: true});
+  assert.equal(stale.conditionsStale, true);
+  assert.equal(stale.conditions.daily[0].low, -2);
+  assert.deepEqual(stale.alerts, []);
+
+  time = Date.parse('2026-11-26T00:30:00+09:00');
+  unavailable = false;
+  const tomorrow = await getWeather('weather', {DB}, {wait: true});
+  assert.deepEqual(tomorrow.conditions.daily.map(day => [day.date, day.high, day.low]), [['2026-11-26', 9, null]]);
 });

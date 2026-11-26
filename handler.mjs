@@ -1,4 +1,6 @@
-// build.mjs embeds the compiled React page, route data, and server modules.
+// build.mjs embeds the compiled React page, the photo, route data, and server modules.
+let complexPhoto;
+
 function privateResponse(response) {
   const headers = new Headers(response.headers);
   headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
@@ -17,6 +19,15 @@ export default {
       return privateResponse(await modules['roads.mjs'].kakaoRoads(path.split('/').at(-1),request,env,roadPlaces.origin));
     }
     if(!['GET','HEAD'].includes(request.method))return privateResponse(new Response(null,{status:405,headers:{Allow:'GET, HEAD'}}));
+    if(path===clientPhoto.path){
+      const body = request.method === 'HEAD' ? null : (complexPhoto ??= Uint8Array.from(atob(clientPhoto.base64), char => char.charCodeAt(0)));
+      return privateResponse(new Response(body,{headers:{
+        'Content-Type':'image/webp',
+        'Content-Length':String(clientPhoto.size),
+        'Cache-Control':'public, max-age=31536000, immutable',
+        'X-Content-Type-Options':'nosniff',
+      }}));
+    }
     if(path.startsWith('/api/boards/'))return privateResponse(await modules['boards.mjs'].boards(request,env));
     if(path==='/api/roads/fixed')return privateResponse(await modules['roads.mjs'].fixedRoads(request,env,roadRoutes,roadPlaces));
     if(path==='/api/neighborhood'){
@@ -38,8 +49,8 @@ export default {
     if(path.startsWith('/api/')&&['weather','ev','bus','subway'].includes(kind)){
       try {
         const data=kind==='ev'||kind==='weather'
-          ? await modules['services.mjs'].services(kind,env)
-          : await modules['transit.mjs'].transit(kind,env);
+          ? await modules['services.mjs'].services(kind,env,{context,wait:url.searchParams.get('wait')==='1'})
+          : await modules['transit.mjs'].transit(kind,env,{arrivalsOnly:kind==='subway'&&url.searchParams.get('section')==='arrivals'});
         return privateResponse(data instanceof Response?data:Response.json(data,{headers:{'Cache-Control':'no-store'}}));
       } catch {
         return privateResponse(Response.json({error:'upstream_unavailable'},{status:503,headers:{'Cache-Control':'no-store'}}));
