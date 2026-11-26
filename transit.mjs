@@ -1,5 +1,6 @@
 import {publicRail} from './subway-public.mjs';
-const stations = ['가양', '증미', '등촌', '염창'];
+const nearbyStations = ['증미', '등촌'];
+const allStations = ['가양', ...nearbyStations, '염창'];
 const stops = [
   {id:'16251', name:'태영.삼성한사랑아파트', direction:'도심 방향'},
   {id:'16252', name:'금호.한솔아파트', direction:'공항 방향'},
@@ -8,9 +9,9 @@ const stops = [
 ];
 const cache = new Map();
 
-async function json(url, timeout = 9000) {
-  const response = await fetch(url, {signal:AbortSignal.timeout(timeout), headers:{Accept:'application/json'}});
-  if (!response.ok) throw new Error('교통정보 조회 실패');
+async function json(url, timeout = 9000, redirect = 'follow') {
+  const response = await fetch(url, {signal:AbortSignal.timeout(timeout), headers:{Accept:'application/json'}, redirect});
+  if (!response.ok) throw new Error('교통정보 조회 실패', {cause:response.status});
   return response.json();
 }
 
@@ -23,12 +24,14 @@ function seoulTimestamp(value) {
 }
 
 async function railRows(key, service, station, field) {
-  const url = 'https://swopenapi.seoul.go.kr/api/subway/' + encodeURIComponent(key)
+  const url = 'http://swopenapi.seoul.go.kr/api/subway/' + encodeURIComponent(key)
     + '/json/' + service + '/0/100/' + encodeURIComponent(station);
-  const data = await json(url);
+  const data = await json(url, 9000, 'manual');
   if (Array.isArray(data[field])) return data[field];
-  if ([data.code,data.errorMessage?.code].includes('INFO-200')) return [];
-  throw new Error('열차 조회 실패');
+  const code = data.errorMessage?.code ?? data.code ?? data.RESULT?.CODE;
+  if (code === 'INFO-200') return [];
+  const reason = typeof code === 'string' && /^(INFO|ERROR)-\d{3}$/.test(code) ? code : 'unexpected response';
+  throw new Error('열차 조회 실패', {cause:reason});
 }
 
 function dir(value, destination='') {
@@ -39,16 +42,18 @@ function dir(value, destination='') {
   return null;
 }
 
-async function rail(env) {
-  const key = env.SEOUL_SUBWAY_KEY;
-  if (!key) return publicRail();
+async function rail(env, arrivalsOnly) {
+  const stations = arrivalsOnly ? nearbyStations : allStations;
+  const publicOptions = {stations, includePositions: !arrivalsOnly};
+  const key = env.SEOUL_SUBWAY_KEY?.trim();
+  if (!key) return publicRail(publicOptions);
   const queries = stations.map(name => railRows(key,'realtimeStationArrival',name,'realtimeArrivalList'));
-  queries.push(railRows(key,'realtimePosition','9호선','realtimePositionList'));
+  if (!arrivalsOnly) queries.push(railRows(key,'realtimePosition','9호선','realtimePositionList'));
   const results = await Promise.allSettled(queries);
   const now = Date.now();
   const arrivals = [];
   const failedStations = [];
-  for (const [index, result] of results.slice(0,4).entries()) {
+  for (const [index, result] of results.slice(0, stations.length).entries()) {
     const station = stations[index];
     if (result.status !== 'fulfilled') { failedStations.push(station); continue; }
     for (const row of result.value) {
@@ -63,8 +68,8 @@ async function rail(env) {
         express: /급행|특급/.test(row.btrainSttus||''), message:row.arvlMsg2||'', due, observed});
     }
   }
-  const positions = results[4];
-  const trains = positions.status === 'fulfilled' ? positions.value.filter(row => {
+  const positions = results[stations.length];
+  const trains = positions?.status === 'fulfilled' ? positions.value.filter(row => {
     const observed = seoulTimestamp(row.recptnDt);
     return String(row.subwayId)==='1009' && stations.includes(row.statnNm) && dir(row.updnLine,row.statnTnm)
       && observed && now - observed <= 180000;
@@ -72,9 +77,16 @@ async function rail(env) {
     destination:row.statnTnm, express:['1','7'].includes(String(row.directAt)),
     state:['진입','도착','출발','전역 출발'][Number(row.trainSttus)]||'운행', observed:seoulTimestamp(row.recptnDt)})) : [];
   const failures = results.filter(r=>r.status==='rejected').length;
-  if (failures===5) return publicRail();
+  if (failures===results.length) {
+    console.warn('Seoul subway API unavailable', results.map(({reason}) => {
+      if (typeof reason?.cause === 'number') return 'HTTP ' + reason.cause;
+      if (typeof reason?.cause === 'string') return reason.cause;
+      return ['TimeoutError','AbortError','SyntaxError','TypeError'].includes(reason?.name) ? reason.name : 'unknown';
+    }));
+    return publicRail(publicOptions);
+  }
   return {status:failures?'partial':'ok', stations, arrivals, trains,
-    failedStations, positionFailed:positions.status!=='fulfilled', fetchedAt:now,
+    failedStations, positionFailed:positions?.status==='rejected', fetchedAt:now,
     source:'서울 열린데이터광장 공식 API'};
 }
 
@@ -134,12 +146,13 @@ async function bus(env) {
     source:sources.join(' / ') || null};
 }
 
-export async function transit(kind, env={}) {
+export async function transit(kind, env={}, {arrivalsOnly = false} = {}) {
   if (!['bus','subway'].includes(kind)) throw new Error('Unknown transit service');
-  const prior=cache.get(kind);
+  const cacheKey = kind === 'subway' && arrivalsOnly ? 'subway-arrivals' : kind;
+  const prior=cache.get(cacheKey);
   if (prior && Date.now()<prior.expires) return prior.value;
-  const value=await (kind==='bus'?bus(env):rail(env));
+  const value=await (kind==='bus'?bus(env):rail(env, arrivalsOnly));
   // Workers subrequests are bound to their originating request.
-  cache.set(kind,{value,expires:Date.now()+(kind==='bus'?60000:10000)});
+  cache.set(cacheKey,{value,expires:Date.now()+(kind==='bus'?60000:10000)});
   return value;
 }

@@ -106,12 +106,11 @@ function periodLabel(range: DateRange) {
   return `${shortDate(range.start, true)}–${shortDate(range.end, range.start.slice(0, 4) !== range.end.slice(0, 4))}`;
 }
 
-function dateSummary(event: NeighborhoodEvent, month: string) {
+function dateSummary(event: NeighborhoodEvent, month: string, showDates: boolean) {
   const dates = exactDates(event).filter(date => date.startsWith(month));
-  if (dates.length) return `${Number(month.slice(5))}월 ${dates.map(date => Number(date.slice(-2))).join('·')}일`;
+  if (dates.length) return showDates ? `${Number(month.slice(5))}월 ${dates.map(date => Number(date.slice(-2))).join('·')}일` : null;
   const range = usableRange(event.range);
-  if (range) return periodLabel(range);
-  return '일정 확인 필요';
+  return range ? `행사 기간 ${periodLabel(range)}` : null;
 }
 
 function officialUrl(value: string | null | undefined) {
@@ -166,17 +165,16 @@ function registrationClosed(event: NeighborhoodEvent, now: number) {
 function EventItem({ event, month, showDates = false, unconfirmed = false, closed = false }: {
   event: NeighborhoodEvent; month: string; showDates?: boolean; unconfirmed?: boolean; closed?: boolean;
 }) {
-  const range = usableRange(event.range);
   const service = usableRange(event.servicePeriod);
   const reservation = event.reservation;
   const opens = reservation ? reservationTime(reservation.opensAt) : null;
   const closes = reservation ? reservationTime(reservation.closesAt) : null;
-  const label = [showDates ? dateSummary(event, month) : null, event.category].filter(Boolean).join(' · ');
+  const schedule = dateSummary(event, month, showDates);
+  const details = [event.place, event.time, event.fee, event.category].filter(Boolean);
   return <li className="nb-event">
-    {label && <p className="nb-event-label">{label}</p>}
     <h4>{event.title}</h4>
-    {[event.time, event.place, event.fee].some(Boolean) && <p className="nb-meta">{[event.time, event.place, event.fee].filter(Boolean).join(' · ')}</p>}
-    {!showDates && range && <p className="nb-meta">안내 기간 {periodLabel(range)}</p>}
+    {schedule && <p className="nb-event-date">{schedule}</p>}
+    {details.length > 0 && <p className="nb-meta">{details.join(' · ')}</p>}
     {unconfirmed && service && <p className="nb-meta">예약 페이지의 이용기간 {periodLabel(service)} · 실제 진행일은 공식 안내에서 확인해 주세요.</p>}
     {unconfirmed && !service && <p className="nb-meta">실제 진행일은 공식 안내에서 확인해 주세요.</p>}
     {reservation && <p className="nb-reservation">{closed ? '접수 마감' : reservationStatus(reservation)}</p>}
@@ -253,19 +251,15 @@ function useNeighborhoodData(section: Section) {
   return { data, loading, failed };
 }
 
-function SectionHeading({ id, title, request }: {
-  id: string; title: string; request: ReturnType<typeof useNeighborhoodData>;
+function RequestStatus({ title, request }: {
+  title: string; request: ReturnType<typeof useNeighborhoodData>;
 }) {
   const { data, loading, failed } = request;
-  return <>
-    <div className="section-heading">
-      <h2 id={id}>{title}</h2>
-    </div>
-    {loading && <p className="nb-load" role="status">{title}을 불러오는 중입니다.</p>}
-    {failed && <p className="nb-load nb-error" role="alert">
-      {data ? '새로 불러오지 못했습니다. 이전 정보를 표시합니다.' : '불러오지 못했습니다. 아래 공식 출처를 펼쳐 최신 정보를 확인해 주세요.'}
-    </p>}
-  </>;
+  if (loading) return <p className="nb-load" role="status">{title} 불러오는 중</p>;
+  if (!failed) return null;
+  return <p className="nb-load nb-error" role="alert">
+    {data ? '새로 불러오지 못했습니다. 이전 정보를 표시합니다.' : '불러오지 못했습니다. 아래 공식 출처를 펼쳐 최신 정보를 확인해 주세요.'}
+  </p>;
 }
 
 export function Neighborhood() {
@@ -306,8 +300,11 @@ export function Neighborhood() {
   const now = Date.now();
   const closedIds = new Set(monthEvents.filter(event => registrationClosed(event, now)).map(event => event.id));
   const otherEvents = monthEvents.filter(event => !closedIds.has(event.id));
-  const selectedEvents = otherEvents.filter(event => exactDates(event).includes(selected));
-  const periodEvents = otherEvents.filter(event => usableRange(event.range) && !exactDates(event).some(date => date.startsWith(month)));
+  const selectedDay = { start: selected, end: selected };
+  const selectedEvents = [
+    ...otherEvents.filter(event => exactDates(event).includes(selected)),
+    ...otherEvents.filter(event => !exactDates(event).some(date => date.startsWith(month)) && overlaps(usableRange(event.range), selectedDay)),
+  ];
   const unconfirmedEvents = otherEvents.filter(event => !exactDates(event).length && !usableRange(event.range));
   const monthDatedEvents = otherEvents.filter(event => exactDates(event).length || usableRange(event.range));
   const visibleEvents = view === 'calendar' ? selectedEvents : monthDatedEvents;
@@ -315,7 +312,9 @@ export function Neighborhood() {
     if (!closedIds.has(event.id)) return false;
     if (view === 'list') return true;
     const dates = exactDates(event);
-    return dates.includes(selected) || !dates.some(date => date.startsWith(month));
+    if (dates.some(date => date.startsWith(month))) return dates.includes(selected);
+    const range = usableRange(event.range);
+    return range ? overlaps(range, selectedDay) : !dates.length;
   });
   const counts = new Map<string, number>();
   monthEvents.forEach(event => exactDates(event).filter(date => date.startsWith(month)).forEach(date => counts.set(date, (counts.get(date) ?? 0) + 1)));
@@ -366,7 +365,7 @@ export function Neighborhood() {
 
   return <div className="neighborhood">
     <section aria-labelledby={`${id}-events-title`}>
-      <SectionHeading id={`${id}-events-title`} title="행사 일정" request={eventRequest} />
+      <div className="section-heading"><h2 id={`${id}-events-title`}>행사 일정</h2></div>
       <div className="nb-events-toolbar">
         <p className="nb-meta">강서구 공연·전시·도서관 프로그램</p>
         <div className="nb-view" role="group" aria-label="행사 보기 방식">
@@ -396,15 +395,11 @@ export function Neighborhood() {
           <p id={`${id}-calendar-note`} className="nb-calendar-note"><span className="nb-day-dot" aria-hidden="true" />날짜가 확정된 일정</p>
           <p id={`${id}-keyboard`} className="sr-only">방향키로 날짜를 이동하고 Page Up과 Page Down으로 달을 바꿀 수 있습니다.</p>
         </div>
-        <section className="nb-agenda" aria-labelledby={`${id}-agenda`}>
+        <section className="nb-agenda" aria-labelledby={`${id}-agenda`} data-loading={eventRequest.loading || undefined}>
           <h3 id={`${id}-agenda`}>{view === 'calendar' ? `${dayLabel(selected)} 일정` : `${monthNumber}월 일정`}</h3>
+          <RequestStatus title="행사 일정" request={eventRequest} />
           {visibleEvents.length > 0 && <ul className="nb-event-list">{visibleEvents.map(event => <EventItem key={event.id} event={event} month={month} showDates={view === 'list'} />)}</ul>}
-          {!visibleEvents.length && !closedEvents.length && (!eventRequest.loading || eventRequest.data) && <p className="nb-empty">{eventRequest.failed && !eventRequest.data ? '공식 사이트에서 일정을 확인해 주세요.' : view === 'calendar' ? '이 날짜에 확인된 일정이 없습니다.' : '이 달에 확인된 일정이 없습니다.'}</p>}
-          {view === 'calendar' && periodEvents.length > 0 && <div className="nb-extra-events">
-            <h4>이달의 기간 행사·전시</h4>
-            <p className="nb-meta">운영일과 관람 시간은 공식 안내를 확인해 주세요.</p>
-            <ul className="nb-event-list">{periodEvents.map(event => <EventItem key={event.id} event={event} month={month} showDates />)}</ul>
-          </div>}
+          {!visibleEvents.length && !closedEvents.length && eventRequest.data && <p className="nb-empty">{view === 'calendar' ? '이 날짜에 확인된 일정이 없습니다.' : '이 달에 확인된 일정이 없습니다.'}</p>}
           {unconfirmedEvents.length > 0 && <div className="nb-extra-events">
             <h4>일정 확인 필요</h4>
             <ul className="nb-event-list">{unconfirmedEvents.map(event => <EventItem key={event.id} event={event} month={month} unconfirmed />)}</ul>
@@ -422,11 +417,11 @@ export function Neighborhood() {
           </details>}
         </section>
       </div>
-      <p className="sr-only" role="status">{!eventRequest.loading ? `${year}년 ${monthNumber}월, ${view === 'calendar' ? `${dayLabel(selected)} 확정 일정 ${counts.get(selected) ?? 0}건` : `일정 ${monthEvents.length}건`}` : ''}</p>
+      <p className="sr-only" role="status">{!eventRequest.loading ? `${year}년 ${monthNumber}월, ${view === 'calendar' ? `${dayLabel(selected)} 일정 ${visibleEvents.length + closedEvents.length}건` : `일정 ${monthEvents.length}건`}` : ''}</p>
     </section>
 
     <section className="nb-board" aria-labelledby={`${id}-board-title`}>
-      <SectionHeading id={`${id}-board-title`} title="구청 소식" request={noticeRequest} />
+      <div className="section-heading"><h2 id={`${id}-board-title`}>구청 소식</h2></div>
       <div className="nb-board-toolbar">
         <div className="nb-post-filters" role="group" aria-label="게시물 종류">
           {(['all', 'notice', 'news'] as const).map(kind => <button type="button" key={kind} aria-pressed={filter === kind} aria-controls={`${id}-posts`} onClick={() => {
@@ -444,6 +439,7 @@ export function Neighborhood() {
         </label>
       </div>
       <div id={`${id}-posts`} className="nb-post-results" ref={postResults} role="region" aria-label="구청 소식 목록" tabIndex={-1}>
+        <RequestStatus title="구청 소식" request={noticeRequest} />
         {pagePosts.length > 0 && <ul className="nb-posts">{pagePosts.map(notice => <li className="nb-post" key={notice.id}>
           <span className="nb-post-kind">{notice.kind === 'notice' ? '공지' : '뉴스'}</span>
           <div className="nb-post-content">
@@ -451,8 +447,8 @@ export function Neighborhood() {
           </div>
           {validDate(notice.publishedOn) ? <time dateTime={notice.publishedOn}>{notice.publishedOn.replaceAll('-', '.')}</time> : <span className="nb-post-date">게시일 확인 필요</span>}
         </li>)}</ul>}
-        {!notices.length && (!noticeRequest.loading || noticeRequest.data) && <p className="nb-empty">
-          {noticeRequest.failed && !noticeRequest.data ? '아래 공식 출처에서 최신 소식을 확인해 주세요.' : terms.length ? '검색어와 일치하는 게시물이 없습니다.' : '현재 표시할 게시물이 없습니다.'}
+        {!notices.length && noticeRequest.data && <p className="nb-empty">
+          {terms.length ? '검색어와 일치하는 게시물이 없습니다.' : '현재 표시할 게시물이 없습니다.'}
         </p>}
       </div>
       {pageCount > 1 && <nav className="nb-pagination" aria-label="구청 소식 페이지">

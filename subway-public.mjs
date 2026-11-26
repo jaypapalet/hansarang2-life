@@ -134,24 +134,24 @@ async function linePositions() {
   return trains;
 }
 
-export async function publicRail() {
-  const stations = [...stationCodes.keys()];
+export async function publicRail({stations = [...stationCodes.keys()], includePositions = true} = {}) {
   // 도착정보: subway-live 1순위, 실패한 역만 도착 폴백.
-  const arrivalResults = await Promise.allSettled(stations.map(async station => {
+  const arrivals = Promise.allSettled(stations.map(async station => {
     try { return await liveArrivals(station); }
     catch { return dochakArrivals(station, stationCodes.get(station)); }
   }));
-  const position = await linePositions().then(
-    value => ({status: 'fulfilled', value}),
-    reason => ({status: 'rejected', reason}));
+  const positions = includePositions ? linePositions().then(
+    trains => ({trains, failed: false}),
+    () => ({trains: [], failed: true})) : null;
+  const [arrivalResults, position] = await Promise.all([arrivals, positions]);
   const failedStations = stations.filter((_, i) => arrivalResults[i].status === 'rejected');
-  const positionFailed = position.status === 'rejected';
-  const failures = failedStations.length + Number(positionFailed);
+  const positionFailed = position?.failed ?? false;
+  const unavailable = failedStations.length === stations.length && (!includePositions || positionFailed);
   return {
-    status: failures === stations.length + 1 ? 'unavailable' : failures ? 'partial' : 'ok',
+    status: unavailable ? 'unavailable' : failedStations.length || positionFailed ? 'partial' : 'ok',
     stations, failedStations,
     arrivals: arrivalResults.flatMap(r => r.status === 'fulfilled' ? r.value : []),
-    trains: positionFailed ? [] : position.value, positionFailed, fetchedAt: Date.now(),
+    trains: position?.trains ?? [], positionFailed, fetchedAt: Date.now(),
     source: 'subway-live · 지하철 실시간',
   };
 }

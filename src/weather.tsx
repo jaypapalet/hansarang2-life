@@ -1,6 +1,6 @@
 import { Cloud, CloudFog, CloudLightning, CloudMoon, CloudRain, CloudSnow, CloudSun, Moon, Sun } from 'lucide-react';
 import { useLiveData } from './live-data';
-import complexPhoto from './media/hansarang-complex.webp';
+import complexPhoto from './media/hansarang-complex.webp?no-inline';
 import './weather.css';
 
 type Hour = { time: string; temperature: number; code: number; isDay: boolean; probability: number | null };
@@ -70,12 +70,13 @@ export function Weather() {
   const hours = current?.hourly ?? [];
   const days = current?.daily?.filter(day => day.date >= today) ?? [];
   const todayForecast = days.find(day => day.date === today);
-  const status = data || failed ? '날씨를 불러오지 못했습니다.' : '날씨를 불러오는 중입니다.';
-  const forecastStatus = data || failed ? '표시할 예보가 없습니다.' : '예보를 불러오는 중입니다.';
+  const loading = !data && !failed;
+  const status = loading ? '날씨를 불러오는 중입니다.' : '날씨를 불러오지 못했습니다.';
+  const forecastStatus = loading ? '예보를 불러오는 중입니다.' : '표시할 예보가 없습니다.';
   const { Icon, label } = current ? outlook(current.code, current.isDay) : { Icon: Cloud, label: '' };
 
   return <>
-    <section className="weather" aria-labelledby="page-title">
+    <section className="weather" aria-labelledby="page-title" data-loading={loading || undefined}>
       <div className="weather-content">
         <h1 id="page-title" tabIndex={-1}>오늘 날씨</h1>
         <p className="weather-place">등촌1동 · <time dateTime={today}>{fullDate.format(now)}</time>{current && (failed || data?.conditionsStale) && ' · 저장된 날씨'}</p>
@@ -90,7 +91,10 @@ export function Weather() {
             {current.probability != null && <div><dt>강수 확률</dt><dd>{current.probability}%</dd></div>}
             {current.feelsLike != null && <div><dt>체감</dt><dd>{degrees(current.feelsLike)}</dd></div>}
           </dl>
-        </> : <p className="weather-current" role="status">{status}</p>}
+        </> : <>
+          <p className="weather-current" role="status">{status}</p>
+          {loading && <div className="weather-details weather-details-loading" aria-hidden="true" />}
+        </>}
       </div>
       <img className="weather-photo" src={complexPhoto} alt="한사랑2차삼성아파트 전경" width={1050} height={1397} fetchPriority="high" />
     </section>
@@ -99,12 +103,12 @@ export function Weather() {
         <h2 id="weather-hourly-title">시간대별 예보</h2>
         {hours.length ? <ul className="hour-forecast" role="list" aria-label="시간대별 예보" tabIndex={0}>
           {hours.map(hour => <HourForecast key={hour.time} hour={hour} today={today} tomorrow={tomorrow} />)}
-        </ul> : <p className="secondary">{forecastStatus}</p>}
+        </ul> : <p className={loading ? 'secondary hour-forecast-loading' : 'secondary'}>{forecastStatus}</p>}
       </section>
       <section aria-labelledby="weather-daily-title">
         <h2 id="weather-daily-title">일자별 예보</h2>
         {days.length ? <ul className="day-forecast" role="list">{days.map(day => <DayForecast key={day.date} day={day} today={today} />)}</ul>
-          : <p className="secondary">{forecastStatus}</p>}
+          : <p className={loading ? 'secondary day-forecast-loading' : 'secondary'}>{forecastStatus}</p>}
       </section>
       {current && <details className="source-details forecast-source">
         <summary>날씨 정보 출처</summary>

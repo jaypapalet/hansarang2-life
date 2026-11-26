@@ -19,8 +19,8 @@ npm start
 
 | 구성 | 기술과 위치 |
 | --- | --- |
-| 주민 화면 | `src/`의 React, TypeScript, CSS. Vite가 화면과 사진·글꼴을 `dist/client/index.html`에 묶는다. 기본 주소는 `/`이며 기존 `/resident/` 주소에서도 같은 화면을 연다. |
-| 서버 | JavaScript ES 모듈로 만든 Cloudflare Worker. `build.mjs`가 화면과 서버 API를 `dist/server/index.js`에 묶는다. `local.mjs`는 Node.js에서 같은 Worker를 실행한다. |
+| 주민 화면 | `src/`의 React, TypeScript, CSS. Vite가 화면과 글꼴을 `dist/client/index.html`에 묶는다. 단지 전경 사진은 오늘 탭을 열 때 불러온다. 기본 주소는 `/`이며 기존 `/resident/` 주소에서도 같은 화면을 연다. |
+| 서버 | JavaScript ES 모듈로 만든 Cloudflare Worker. `build.mjs`가 화면과 단지 전경 사진, 서버 API를 `dist/server/index.js`에 묶는다. `local.mjs`는 Node.js에서 같은 Worker를 실행한다. |
 | 호스팅 | ChatGPT Sites. 기존 프로젝트 ID는 `.openai/hosting.json`에 있다. |
 | 도로 정보 | 지정 경로는 OSRM 기준 경로와 TOPIS 구간 속도를 쓴다. 목적지는 카카오맵에서 찾고 카카오모빌리티로 거리와 소요 시간을 조회한다. [도로 전광판 상세](ROADS.md) |
 
@@ -30,7 +30,7 @@ npm start
 
 동네 소식 탭에서 행사 일정과 구청 소식을 확인한다. 게시판에서 최근에 수집한 공지·까치뉴스의 제목을 검색할 수 있다. 서버가 [서울시 문화행사](https://data.seoul.go.kr/dataList/OA-15486/S/1/datasetView.do), [강서구 문화행사 예약](https://data.seoul.go.kr/dataList/OA-12171/S/1/datasetView.do), [서울식물원 행사 공지](https://botanicpark.seoul.go.kr/front/board/newsView.do?sn=20821)를 읽는다. 예약 이용기간만 있는 행사는 목록에 두고, 확인된 운영일에만 달력에 표시한다.
 
-[강서구 문화시설](https://culture.gangseo.seoul.kr/gsfc/culture/calendar.do?menuNo=800038), [LG아트센터 서울](https://www.lgart.com/product/performance/year), [강서구립도서관](https://lib.gangseo.seoul.kr/ApplyForParticipate), [서울시교육청 강서도서관](https://gslib.sen.go.kr/gslib/module/teach/index.do?menu_idx=15&searchCate1=16)의 공개 일정도 읽는다. 이 출처는 지난달부터 다음 달까지의 일정을 가져온다. 회차가 확인된 공연과 날짜가 확정된 프로그램은 달력에 표시한다. 전시처럼 운영 기간을 안내하는 경우에는 기간 목록과 공식 링크를 표시한다.
+[강서구 문화시설](https://culture.gangseo.seoul.kr/gsfc/culture/calendar.do?menuNo=800038), [LG아트센터 서울](https://www.lgart.com/product/performance/year), [강서구립도서관](https://lib.gangseo.seoul.kr/ApplyForParticipate), [서울시교육청 강서도서관](https://gslib.sen.go.kr/gslib/module/teach/index.do?menu_idx=15&searchCate1=16)의 공개 일정도 읽는다. 이 출처는 지난달부터 다음 달까지의 일정을 가져온다. 회차나 날짜가 확정된 일정은 달력에 점으로 표시한다. 기간만 공개된 행사도 선택한 날짜가 기간에 포함되면 같은 목록에 보여준다.
 
 접수가 끝난 행사는 달력과 월별 목록 아래의 **접수 마감**에서 펼쳐 볼 수 있다.
 

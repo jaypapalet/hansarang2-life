@@ -35,7 +35,7 @@ function nextTrains(rows: Train[], now: number) {
 }
 
 export function SubwayArrivals() {
-  const { data, failed } = useLiveData<SubwayData>('/api/subway', 20_000);
+  const { data, failed } = useLiveData<SubwayData>('/api/subway?section=arrivals', 20_000);
   const now = Date.now();
   const arrivals = failed ? [] : (data?.arrivals ?? []).filter(row => !row.express && now - row.observed <= 180_000
     && row.observed - now <= 30_000 && (row.due == null || row.due >= now - 15_000));
