@@ -1,6 +1,4 @@
-// build.mjs embeds the compiled React page, the photo, route data, and server modules.
-let complexPhoto;
-
+// build.mjs embeds the compiled React page, images, route data, and server modules.
 function privateResponse(response) {
   const headers = new Headers(response.headers);
   headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
@@ -19,12 +17,13 @@ export default {
       return privateResponse(await modules['roads.mjs'].kakaoRoads(path.split('/').at(-1),request,env,roadPlaces.origin));
     }
     if(!['GET','HEAD'].includes(request.method))return privateResponse(new Response(null,{status:405,headers:{Allow:'GET, HEAD'}}));
-    if(path===clientPhoto.path){
-      const body = request.method === 'HEAD' ? null : (complexPhoto ??= Uint8Array.from(atob(clientPhoto.base64), char => char.charCodeAt(0)));
+    const image = clientImages[path];
+    if (image) {
+      const body = request.method === 'HEAD' ? null : (image.bytes ??= Uint8Array.from(atob(image.base64), char => char.charCodeAt(0)));
       return privateResponse(new Response(body,{headers:{
-        'Content-Type':'image/webp',
-        'Content-Length':String(clientPhoto.size),
-        'Cache-Control':'public, max-age=31536000, immutable',
+        'Content-Type':image.contentType,
+        'Content-Length':String(image.size),
+        'Cache-Control':image.cacheControl,
         'X-Content-Type-Options':'nosniff',
       }}));
     }
