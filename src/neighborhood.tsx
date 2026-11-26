@@ -9,6 +9,7 @@ type NeighborhoodEvent = {
   category: string;
   place: string;
   url: string;
+  organizerId?: string;
   dates: string[];
   range: DateRange | null;
   reservation: { opensAt: string | null; closesAt: string | null; status: string | null; url: string | null } | null;
@@ -162,8 +163,28 @@ function registrationClosed(event: NeighborhoodEvent, now: number) {
   return closedRegistrationStatuses.has(status) || Date.parse(reservation.closesAt ?? '') <= now;
 }
 
-function EventItem({ event, month, showDates = false, unconfirmed = false, closed = false }: {
-  event: NeighborhoodEvent; month: string; showDates?: boolean; unconfirmed?: boolean; closed?: boolean;
+function performanceInstitution(event: NeighborhoodEvent) {
+  if (event.id.startsWith('lg-art:') || event.organizerId?.startsWith('lg-art:')) return 'LG아트센터 서울';
+  const genre = /공연|뮤지컬|오페라|연극|무용|국악|클래식|콘서트|재즈|대중음악|독주|독창/;
+  const performanceTitle = /공연|음악회|연주회|콘서트|국악\s*한마당|뮤지컬|연극|인형극|버스킹/;
+  if (/전시/.test(event.category) || (!genre.test(event.category) && !performanceTitle.test(event.title))) return null;
+
+  const place = event.place.trim();
+  const compactPlace = place.normalize('NFKC').replace(/\s+/g, '');
+  if (compactPlace.startsWith('LG아트센터')) return 'LG아트센터 서울';
+  if (compactPlace.startsWith('강서아트리움')) return '강서아트리움';
+  const library = place.match(/(?:^|\s)([^\s,]+(?:\s+작은)?도서관)(?=\s|$|[,(/])/)?.[1];
+  if (library) return library.replace(/\s+/g, '');
+  if (event.id.startsWith('gangseo-library:')) return '강서구립도서관';
+  if (event.id.startsWith('seoul-library:')) return '강서도서관';
+  return '기관 확인 필요';
+}
+
+type EventHeading = 'h4' | 'h5' | 'h6';
+type EventListOptions = { month: string; showDates?: boolean; unconfirmed?: boolean; closed?: boolean };
+
+function EventItem({ event, heading: Title, month, showDates = false, unconfirmed = false, closed = false }: EventListOptions & {
+  event: NeighborhoodEvent; heading: EventHeading;
 }) {
   const service = usableRange(event.servicePeriod);
   const reservation = event.reservation;
@@ -172,7 +193,7 @@ function EventItem({ event, month, showDates = false, unconfirmed = false, close
   const schedule = dateSummary(event, month, showDates);
   const details = [event.place, event.time, event.fee, event.category].filter(Boolean);
   return <li className="nb-event">
-    <h4>{event.title}</h4>
+    <Title className="nb-event-title">{event.title}</Title>
     {schedule && <p className="nb-event-date">{schedule}</p>}
     {details.length > 0 && <p className="nb-meta">{details.join(' · ')}</p>}
     {unconfirmed && service && <p className="nb-meta">예약 페이지의 이용기간 {periodLabel(service)} · 실제 진행일은 공식 안내에서 확인해 주세요.</p>}
@@ -184,6 +205,37 @@ function EventItem({ event, month, showDates = false, unconfirmed = false, close
       {reservation?.url !== event.url && <OfficialLink url={reservation?.url} label={`${event.title} 예약 안내`}>예약 안내</OfficialLink>}
     </div>
   </li>;
+}
+
+function EventList({ events, ...options }: EventListOptions & { events: NeighborhoodEvent[] }) {
+  const institutions = new Map<string, NeighborhoodEvent[]>();
+  const otherEvents: NeighborhoodEvent[] = [];
+  for (const event of events) {
+    const institution = performanceInstitution(event);
+    if (!institution) {
+      otherEvents.push(event);
+      continue;
+    }
+    const group = institutions.get(institution);
+    if (group) group.push(event);
+    else institutions.set(institution, [event]);
+  }
+
+  const GroupTitle = options.unconfirmed ? 'h5' : 'h4';
+  const itemHeading = options.unconfirmed ? 'h6' : 'h5';
+  const grouped = institutions.size > 0;
+  const groups: [string | null, NeighborhoodEvent[]][] = [...institutions];
+  if (otherEvents.length) groups.push([null, otherEvents]);
+
+  return groups.map(([institution, items]) => {
+    const list = <ul className="nb-event-list" key={institution ?? 'other'}>{items.map(event => <EventItem key={event.id} event={event} {...options}
+      heading={grouped ? itemHeading : GroupTitle}
+      unconfirmed={options.unconfirmed || (options.closed && !exactDates(event).length && !usableRange(event.range))} />)}</ul>;
+    return grouped ? <div className="nb-institution" key={institution ?? 'other'}>
+      <GroupTitle className="nb-institution-title">{institution ?? '그 밖의 일정'}</GroupTitle>
+      {list}
+    </div> : list;
+  });
 }
 
 function SourceNotes({ sources, section, failed, loading }: { sources: Source[]; section: Section; failed: boolean; loading: boolean }) {
@@ -398,11 +450,11 @@ export function Neighborhood() {
         <section className="nb-agenda" aria-labelledby={`${id}-agenda`} data-loading={eventRequest.loading || undefined}>
           <h3 id={`${id}-agenda`}>{view === 'calendar' ? `${dayLabel(selected)} 일정` : `${monthNumber}월 일정`}</h3>
           <RequestStatus title="행사 일정" request={eventRequest} />
-          {visibleEvents.length > 0 && <ul className="nb-event-list">{visibleEvents.map(event => <EventItem key={event.id} event={event} month={month} showDates={view === 'list'} />)}</ul>}
+          <EventList events={visibleEvents} month={month} showDates={view === 'list'} />
           {!visibleEvents.length && !closedEvents.length && eventRequest.data && <p className="nb-empty">{view === 'calendar' ? '이 날짜에 확인된 일정이 없습니다.' : '이 달에 확인된 일정이 없습니다.'}</p>}
           {unconfirmedEvents.length > 0 && <div className="nb-extra-events">
             <h4>일정 확인 필요</h4>
-            <ul className="nb-event-list">{unconfirmedEvents.map(event => <EventItem key={event.id} event={event} month={month} unconfirmed />)}</ul>
+            <EventList events={unconfirmedEvents} month={month} unconfirmed />
           </div>}
           {closedEvents.length > 0 && <details className="nb-closed-events" key={view === 'calendar' ? selected : month}>
             <summary>
@@ -410,10 +462,7 @@ export function Neighborhood() {
               <span className="nb-closed-expand">펼치기</span>
               <span className="nb-closed-collapse">접기</span>
             </summary>
-            <ul className="nb-event-list">
-              {closedEvents.map(event => <EventItem key={event.id} event={event} month={month} closed showDates
-                unconfirmed={!exactDates(event).length && !usableRange(event.range)} />)}
-            </ul>
+            <EventList events={closedEvents} month={month} showDates closed />
           </details>}
         </section>
       </div>

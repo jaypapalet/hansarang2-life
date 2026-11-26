@@ -8,7 +8,7 @@
 .neighborhood [hidden] { display: none !important; }
 .neighborhood button { color: inherit; cursor: pointer; }
 .neighborhood button:disabled { color: var(--muted); cursor: default; }
-.neighborhood h4 { margin: 0; font-size: 1rem; line-height: 1.4; letter-spacing: -.015em; font-weight: 710; }
+.neighborhood h4, .nb-event-title, .nb-institution-title { margin: 0; font-size: 1rem; line-height: 1.4; letter-spacing: -.015em; font-weight: 710; }
 .neighborhood a { overflow-wrap: anywhere; }
 .neighborhood ul { margin: 0; padding: 0; list-style: none; }
 .nb-load { margin-top: .85rem; color: var(--muted); font-size: .9375rem; }
@@ -43,8 +43,11 @@
 .nb-agenda[data-loading] { min-block-size: 14rem; }
 .nb-agenda > h3 { font-size: 1.1rem; }
 .neighborhood .nb-event-list { margin-top: .55rem; }
+.nb-institution { margin-top: 1rem; }
+.nb-institution + .nb-institution { margin-top: 1.35rem; }
+.nb-institution-title { color: var(--accent); word-break: keep-all; overflow-wrap: anywhere; }
 .nb-event { padding-block: .85rem .3rem; border-top: 1px solid var(--line); }
-.nb-event h4 { word-break: keep-all; overflow-wrap: anywhere; }
+.nb-event-title { word-break: keep-all; overflow-wrap: anywhere; }
 .nb-event-date { margin-top: .25rem; color: var(--accent); font-size: .875rem; line-height: 1.5; font-weight: 650; word-break: keep-all; overflow-wrap: anywhere; }
 .nb-event .nb-meta { margin-top: .25rem; }
 .nb-reservation { margin-top: .3rem; font-size: .875rem; font-weight: 650; color: var(--accent); }
