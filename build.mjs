@@ -21,12 +21,20 @@ const clientDirectory = new URL('dist/client/', import.meta.url);
 const clientHtml = await readFile(new URL('index.html', clientDirectory), 'utf8');
 const clientManifest = JSON.parse(await readFile(new URL('.vite/manifest.json', clientDirectory), 'utf8'));
 const complexPhotoFile = clientManifest['src/media/hansarang-complex.webp'].file;
-const photoBytes = await readFile(new URL(complexPhotoFile, clientDirectory));
-const clientPhoto = {path: '/' + complexPhotoFile, base64: photoBytes.toString('base64'), size: photoBytes.length};
+
+async function clientImage(file, contentType, cacheControl) {
+  const bytes = await readFile(new URL(file, clientDirectory));
+  return {contentType, cacheControl, base64: bytes.toString('base64'), size: bytes.length};
+}
+
+const clientImages = {
+  ['/' + complexPhotoFile]: await clientImage(complexPhotoFile, 'image/webp', 'public, max-age=31536000, immutable'),
+  '/favicon.png': await clientImage('favicon.png', 'image/png', 'public, max-age=3600'),
+};
 const roadPlaces=JSON.parse(await readFile(new URL('src/road-places.json',import.meta.url),'utf8'));
 const roadRoutes=JSON.parse(await readFile(new URL('src/topis-routes.json',import.meta.url),'utf8'));
 for(const file of ['services.mjs','transit.mjs','roads.mjs','boards.mjs','neighborhood.mjs','apartment-notices.mjs']) await compile(file);
 const runtime=await readFile(new URL('handler.mjs',import.meta.url),'utf8');
 await mkdir(new URL('dist/server/',import.meta.url),{recursive:true});
 await writeFile(new URL('dist/server/index.js',import.meta.url),
-  'const clientHtml='+JSON.stringify(clientHtml)+';\nconst clientPhoto='+JSON.stringify(clientPhoto)+';\nconst roadPlaces='+JSON.stringify(roadPlaces)+';\nconst roadRoutes='+JSON.stringify(roadRoutes)+';\nconst modules={};\n'+[...assembled.values()].join('\n')+'\n'+runtime);
+  'const clientHtml='+JSON.stringify(clientHtml)+';\nconst clientImages='+JSON.stringify(clientImages)+';\nconst roadPlaces='+JSON.stringify(roadPlaces)+';\nconst roadRoutes='+JSON.stringify(roadRoutes)+';\nconst modules={};\n'+[...assembled.values()].join('\n')+'\n'+runtime);
