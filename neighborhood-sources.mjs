@@ -476,8 +476,9 @@ function adjacentMonths(now) {
   });
 }
 
-function datedEvent({id, title, category, place, url, range = null, dates = [], time = null, fee = null, reservation = null}) {
-  return {id, title, category, place, url, dates, range, reservation, servicePeriod: null, time, fee};
+function datedEvent({id, title, category, place, url, range = null, dates = [], time = null, fee = null, reservation = null, institution}) {
+  return {id, title, category, place, url, dates, range, reservation, servicePeriod: null, time, fee,
+    ...(institution ? {institution} : {})};
 }
 
 function districtCalendarEntries(html, month) {
@@ -620,11 +621,13 @@ export async function fetchGangseoLibrary() {
     const room = text(row.leArea, 150);
     const place = /도서관|뮤지엄|센터|미술관|박물관/.test(room) || !library || library === '작은'
       ? room : [library + '도서관', room].filter(Boolean).join(' ');
+    const institution = library === '영어' ? '강서영어도서관'
+      : library && !['작은', '통합'].includes(library) ? (library.endsWith('도서관') ? library : library + '도서관') : undefined;
     const signupTime = value => Number.isSafeInteger(value) && value > 0 && value < 4_000_000_000
       ? new Date(value * 1000).toISOString() : null;
     const fee = /^\d{1,8}$/.test(row.leMoney ?? '') ? (+row.leMoney ? (+row.leMoney).toLocaleString('ko-KR') + '원' : '무료') : null;
     return [libraryEvent({
-      id: 'gangseo-library:' + id, title, place, category: '도서관 프로그램', url, range,
+      id: 'gangseo-library:' + id, title, place, category: '도서관 프로그램', url, range, institution,
       time: text(row.leBeginTime, 100) || null, fee,
       reservation: {opensAt: signupTime(row.leTakeSDate), closesAt: signupTime(row.leTakeEDate), status: text(row.lectureStatusName, 50) || null, url},
     })];

@@ -10,6 +10,7 @@ type NeighborhoodEvent = {
   place: string;
   url: string;
   organizerId?: string;
+  institution?: string;
   dates: string[];
   range: DateRange | null;
   reservation: { opensAt: string | null; closesAt: string | null; status: string | null; url: string | null } | null;
@@ -163,21 +164,27 @@ function registrationClosed(event: NeighborhoodEvent, now: number) {
   return closedRegistrationStatuses.has(status) || Date.parse(reservation.closesAt ?? '') <= now;
 }
 
-function performanceInstitution(event: NeighborhoodEvent) {
+function eventInstitution(event: NeighborhoodEvent) {
+  if (event.institution) return event.institution;
   if (event.id.startsWith('lg-art:') || event.organizerId?.startsWith('lg-art:')) return 'LG아트센터 서울';
-  const genre = /공연|뮤지컬|오페라|연극|무용|국악|클래식|콘서트|재즈|대중음악|독주|독창/;
-  const performanceTitle = /공연|음악회|연주회|콘서트|국악\s*한마당|뮤지컬|연극|인형극|버스킹/;
-  if (/전시/.test(event.category) || (!genre.test(event.category) && !performanceTitle.test(event.title))) return null;
+  if (event.id.startsWith('seoul-library:')) return '강서도서관';
+  if (event.id.startsWith('botanic:')) return '서울식물원';
 
   const place = event.place.trim();
   const compactPlace = place.normalize('NFKC').replace(/\s+/g, '');
   if (compactPlace.startsWith('LG아트센터')) return 'LG아트센터 서울';
-  if (compactPlace.startsWith('강서아트리움')) return '강서아트리움';
+  const venue = ['강서아트리움', '서울식물원', '겸재정선미술관', '허준박물관'].find(name => compactPlace.startsWith(name));
+  if (venue) return venue;
+
   const library = place.match(/(?:^|\s)([^\s,]+(?:\s+작은)?도서관)(?=\s|$|[,(/])/)?.[1];
-  if (library) return library.replace(/\s+/g, '');
-  if (event.id.startsWith('gangseo-library:')) return '강서구립도서관';
-  if (event.id.startsWith('seoul-library:')) return '강서도서관';
-  return '기관 확인 필요';
+  if (library) return library === '영어도서관' ? '강서영어도서관' : library.replace(/\s+/g, '');
+  if (event.id.startsWith('gangseo-library:')) {
+    return event.title.startsWith('[길꽃]') ? '길꽃도서관' : '강서구립도서관';
+  }
+
+  const genre = /공연|뮤지컬|오페라|연극|무용|국악|클래식|콘서트|재즈|대중음악|독주|독창/;
+  const performanceTitle = /공연|음악회|연주회|콘서트|국악\s*한마당|뮤지컬|연극|인형극|버스킹/;
+  return !/전시/.test(event.category) && (genre.test(event.category) || performanceTitle.test(event.title)) ? '기관 확인 필요' : null;
 }
 
 type EventHeading = 'h4' | 'h5' | 'h6';
@@ -211,7 +218,7 @@ function EventList({ events, ...options }: EventListOptions & { events: Neighbor
   const institutions = new Map<string, NeighborhoodEvent[]>();
   const otherEvents: NeighborhoodEvent[] = [];
   for (const event of events) {
-    const institution = performanceInstitution(event);
+    const institution = eventInstitution(event);
     if (!institution) {
       otherEvents.push(event);
       continue;
