@@ -219,6 +219,9 @@ test('library dates describe the actual class and enrollment stays separate', as
         leCode: 37, leLGCode: 10, leLName: '북 퍼퓸 만들기', libNameS: '가양', leArea: '제1강의실',
         leOpenSDateFmt: '2026.12.08', leOpenEDateFmt: '2026.12.08',
         leTakeSDate: Date.parse('2026-11-30T10:00:00+09:00') / 1000, leMoney: '0',
+      }, {
+        leCode: 38, leLGCode: 10, leLName: '문화예술탐방', libNameS: '가양', leArea: '백남준아트센터',
+        leOpenSDateFmt: '2026.12.12', leOpenEDateFmt: '2026.12.12',
       }]}});
     }
     assert.equal(options.headers.Accept, 'text/html');
@@ -226,10 +229,12 @@ test('library dates describe the actual class and enrollment stays separate', as
       + '<b class="title">예술무대</b><span>강의기간</span>2026-12-09~2026-12-23'
       + '<span>접수기간</span>2026-11-20~2026-11-20</a></ul>');
   });
-  const [oneDay] = await fetchGangseoLibrary();
+  const [oneDay, tour] = await fetchGangseoLibrary();
   assert.deepEqual(oneDay.dates, ['2026-12-08']);
   assert.equal(oneDay.place, '가양도서관 제1강의실');
   assert.equal(oneDay.reservation.opensAt, '2026-11-30T01:00:00.000Z');
+  assert.equal(tour.place, '백남준아트센터');
+  assert.equal(tour.institution, '가양도서관');
   const [period] = await fetchSeoulLibrary();
   assert.deepEqual(period.dates, []);
   assert.deepEqual(period.range, {start: '2026-12-09', end: '2026-12-23'});
