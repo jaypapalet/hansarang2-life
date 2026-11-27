@@ -32,7 +32,8 @@ jobs:
               --request POST --header @- --output "$snapshot" --write-out '%{http_code}' \
               "$endpoint")"
           if [[ "$status" != 200 ]]; then
-            echo "::error title=K-apt sync endpoint failed::HTTP $status"
+            code="$(jq -r '.error | strings | select(test("^[a-z_]{1,40}$"))' "$snapshot" 2>/dev/null || true)"
+            echo "::error title=K-apt sync endpoint failed::HTTP $status (${code:-unknown_error})"
             exit 1
           fi
           jq -e '(.sources | map(.source) | sort) == ["bids", "fees", "results"]' "$snapshot" >/dev/null

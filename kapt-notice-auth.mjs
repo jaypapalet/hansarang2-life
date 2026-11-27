@@ -17,7 +17,7 @@ function decode(segment) {
 }
 
 async function readKeys(fetcher) {
-  const response = await fetcher(`${issuer}/.well-known/jwks`, { redirect: 'error', signal: AbortSignal.timeout(4500) });
+  const response = await fetcher(`${issuer}/.well-known/jwks`, { redirect: 'manual', signal: AbortSignal.timeout(4500) });
   if (!response.ok) throw new Error('GitHub signing keys unavailable');
   const { keys } = await response.json();
   if (!Array.isArray(keys)) throw new Error('Invalid GitHub signing keys');
