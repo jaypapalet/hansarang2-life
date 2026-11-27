@@ -18,8 +18,8 @@ const feeResponses = {
   getHsmpCleaningCostInfoV3: { cleanCost: '1,200' },
   getHsmpGuardCostInfoV3: { guardCost: '6,000' },
   getHsmpElevatorMntncCostInfoV3: { elevCost: '0' },
-  getHsmpElectricityCostInfoV2: { electP: '5,000', electC: 500 },
-  getHsmpWaterCostInfoV2: { waterCoolP: '3,000', waterCoolC: '0' },
+  getHsmpElectricityCostInfoV3: { electP: '5,000', electC: 500 },
+  getHsmpWaterCostInfoV3: { waterCoolP: '3,000', waterCoolC: '0' },
 };
 
 function authorized(timestamp, overrides = {}, keyId = jwk.kid, badSignature = false) {
@@ -70,8 +70,8 @@ function environment(t) {
   return { DB, DATA_GO_KR_KEY: 'fixture%2B%2Fkey' };
 }
 
-async function syncOn(env, timestamp, fetcher = upstream) {
-  const response = await syncKaptNotices(authorized(timestamp), env, { now: () => timestamp, fetcher, keyFetcher });
+async function syncOn(env, timestamp, fetcher = upstream, claims) {
+  const response = await syncKaptNotices(authorized(timestamp, claims), env, { now: () => timestamp, fetcher, keyFetcher });
   assert.equal(response.status, 200);
   return response.json();
 }
@@ -137,7 +137,9 @@ test('incomplete fees, over-limit pages and unapproved APIs never publish mislea
   });
   assert.deepEqual(result.sources.map(row => row.state), ['incomplete_data', 'incomplete_data', 'api_access_denied']);
   assert.equal((await (await apartmentNotices(board, env)).json()).posts.length, 0);
-  assert.deepEqual((await syncOn(env, time + 16 * 60_000)).sources.map(row => row.published), [1, 1, 1]);
+  assert.deepEqual((await syncOn(env, time + 1000)).sources.map(row => row.published), [0, 0, 0]);
+  const retry = await syncOn(env, time + 2000, upstream, { event_name: 'workflow_dispatch' });
+  assert.deepEqual(retry.sources.map(row => row.published), [1, 1, 1]);
 });
 
 test('the collector stops at a redirect without forwarding its credentials', async t => {
