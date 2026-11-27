@@ -9,6 +9,7 @@
 .notice-date { color: var(--muted); font-size: .875rem; font-weight: 400; font-variant-numeric: tabular-nums; }
 .notice-body { max-width: 68ch; padding: .15rem 0 .9rem 1.2rem; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .notice-photo { display: block; width: auto; max-width: calc(100% - 1.2rem); max-height: 38rem; margin: 0 0 1rem 1.2rem; object-fit: contain; }
+.notice-source { display: inline-flex; align-items: center; min-height: 44px; margin: 0 0 .5rem 1.2rem; color: var(--muted); }
 .notice-pager { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .4rem .6rem; margin-top: .65rem; color: var(--muted); }
 .notice-button { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; padding: .4rem .75rem; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--accent); font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
 .notice-button:hover:not(:disabled) { background: var(--weather); }

@@ -1,6 +1,7 @@
 import { getNoticeUser, noticeAccounts } from './notice-accounts.mjs';
 import { noticeFailure, noticeHeaders, noticeJson, noticeOriginMatches, noticeUnsupported, readNoticeJson } from './notice-http.mjs';
 import { cleanNoticePhotos, discardStagedNoticePhoto, noticePhotoKey, queueOldNoticePhoto, readNoticePhotoForm, serveNoticePhoto, stageNoticePhoto } from './notice-photos.mjs';
+import { kaptNoticeSyncPath, syncKaptNotices } from './kapt-notice-sync.mjs';
 
 const boardPath = '/api/apartment-notices';
 const adminPath = `${boardPath}/admin`;
@@ -15,10 +16,12 @@ function positiveId(value) {
 async function listNotices(db, url, admin) {
   const page = Number(url.searchParams.get('page') ?? '1');
   if (!positiveId(page) || !Number.isSafeInteger(page * pageSize)) return noticeFailure('invalid_page', 400);
-  const columns = 'id, title, body, created_at AS createdAt, photo_key AS photoKey';
+  const columns = 'id, title, body, created_at AS createdAt, photo_key AS photoKey, source_url AS sourceUrl';
   const { results } = await db.prepare(`SELECT ${columns}${admin ? ', revision' : ''}
     FROM apartment_notices ORDER BY id DESC LIMIT ? OFFSET ?`).bind(pageSize + 1, (page - 1) * pageSize).all();
-  const posts = results.slice(0, pageSize).map(({ photoKey, ...post }) => ({ ...post, photoUrl: photoKey ? `${mediaPath}${photoKey}` : null }));
+  const posts = results.slice(0, pageSize).map(({ photoKey, sourceUrl, ...post }) => ({
+    ...post, photoUrl: photoKey ? `${mediaPath}${photoKey}` : null, ...(sourceUrl && { sourceUrl }),
+  }));
   return noticeJson({ posts, hasNext: results.length > pageSize });
 }
 
@@ -88,6 +91,7 @@ export async function apartmentNotices(request, env) {
   const url = new URL(request.url);
   const { method } = request;
   const path = url.pathname;
+  if (path === kaptNoticeSyncPath) return syncKaptNotices(request, env);
   if (path === authPath || path.startsWith(`${authPath}/`)) return noticeAccounts(request, env);
 
   const publicBoard = path === boardPath;

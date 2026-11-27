@@ -1,0 +1,41 @@
+name: Refresh K-apt apartment notices
+
+on:
+  schedule:
+    - cron: '41 0 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: refresh-kapt-notices
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      id-token: write
+    steps:
+      - name: Publish new K-apt apartment notices
+        shell: bash
+        run: |
+          endpoint='https://hansarang2.jaypapa.kr/api/apartment-notices/kapt-sync'
+          id_token="$(printf 'Authorization: Bearer %s\n' "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" |
+            curl --fail --silent --show-error --max-time 15 --header @- --get \
+              --data-urlencode "audience=$endpoint" "$ACTIONS_ID_TOKEN_REQUEST_URL" |
+            jq -er '.value | select(type == "string" and length > 0)')"
+          snapshot="$(mktemp)"
+          trap 'rm -f "$snapshot"' EXIT
+          status="$(printf 'Authorization: Bearer %s\n' "$id_token" |
+            curl --silent --show-error --max-time 55 --retry 2 --retry-max-time 110 \
+              --request POST --header @- --output "$snapshot" --write-out '%{http_code}' \
+              "$endpoint")"
+          if [[ "$status" != 200 ]]; then
+            echo "::error title=K-apt sync endpoint failed::HTTP $status"
+            exit 1
+          fi
+          jq -e '(.sources | map(.source) | sort) == ["bids", "fees", "results"]' "$snapshot" >/dev/null
+          jq -r '.sources[] | select(.state != "ok") |
+            "::warning title=K-apt sync incomplete::\(.source) returned \(.state)."' "$snapshot"
+          jq -r '.sources[] | "\(.source): \(.published) new notices, \(.state)."' "$snapshot"
