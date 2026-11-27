@@ -20,22 +20,26 @@ jobs:
         run: |
           snapshot="$(mktemp)"
           trap 'rm -f "$snapshot"' EXIT
-          hour="$(( $(date -u +%s) / 3600 * 3600000 ))"
           for attempt in 1 2 3; do
+            hour="$(( $(date -u +%s) / 3600 * 3600000 ))"
             if curl --fail --silent --show-error --max-time 40 --output "$snapshot" \
               'https://hansarang2.jaypapa.kr/api/neighborhood?section=events&wait=1' &&
               jq -e --argjson hour "$hour" '
+                def checked_this_hour: (.checkedAt | type) == "number" and .checkedAt >= $hour;
+                def refreshed: .state == "fresh" or .state == "limited";
                 .storage == "d1" and
-                any(.sources[]; .state == "fresh" or .state == "limited") and
+                any(.sources[]; checked_this_hour and refreshed) and
                 all(.sources[]; .state == "unconfigured" or
-                  (.checkedAt >= $hour and (.state == "fresh" or .state == "limited")))
+                  (checked_this_hour and (refreshed or (.state == "stale" and (.updatedAt | type) == "number"))))
               ' "$snapshot" >/dev/null; then
+              jq -r '.sources[] | select(.state == "stale") |
+                "::warning title=Event snapshot kept::\(.id) used saved data from \(.updatedAt / 1000 | floor | todateiso8601)."' "$snapshot"
               jq -r '"Verified \(.events | length) events from D1."' "$snapshot"
               exit 0
             fi
             if [[ "$attempt" != 3 ]]; then sleep 12; fi
           done
-          jq -c '[.sources[]? | {id, state, checkedAt}]' "$snapshot" || true
+          jq -c '[.sources[]? | {id, state, checkedAt, updatedAt}]' "$snapshot" || true
           exit 1
 
   weather:
