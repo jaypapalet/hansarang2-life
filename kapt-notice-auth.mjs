@@ -53,11 +53,14 @@ export async function authorizeKaptSync(request, fetcher, now) {
   if (!match) return false;
   const [, header, payload, signature] = match;
   let keyId;
+  let event;
   try {
     const details = decode(header);
+    const claims = decode(payload);
     if (details?.alg !== 'RS256' || details.crit !== undefined || typeof details.kid !== 'string' ||
-      !keyIdPattern.test(details.kid) || !validClaims(decode(payload), now)) return false;
+      !keyIdPattern.test(details.kid) || !validClaims(claims, now)) return false;
     keyId = details.kid;
+    event = claims.event_name;
   } catch {
     return false;
   }
@@ -67,7 +70,8 @@ export async function authorizeKaptSync(request, fetcher, now) {
   if (!jwk) return false;
   try {
     const key = await crypto.subtle.importKey('jwk', jwk, algorithm, false, ['verify']);
-    return await crypto.subtle.verify(algorithm, key, bytes(signature), new TextEncoder().encode(`${header}.${payload}`));
+    const valid = await crypto.subtle.verify(algorithm, key, bytes(signature), new TextEncoder().encode(`${header}.${payload}`));
+    return valid && event;
   } catch {
     return false;
   }

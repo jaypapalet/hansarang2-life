@@ -12,8 +12,9 @@ const feeItems = [
   [commonFees, 'getHsmpCleaningCostInfoV3', '청소비', ['cleanCost']],
   [commonFees, 'getHsmpGuardCostInfoV3', '경비비', ['guardCost']],
   [commonFees, 'getHsmpElevatorMntncCostInfoV3', '승강기 유지비', ['elevCost']],
-  [usageFees, 'getHsmpElectricityCostInfoV2', '전기료', ['electC', 'electP']],
-  [usageFees, 'getHsmpWaterCostInfoV2', '수도료', ['waterCoolC', 'waterCoolP']],
+  // The gateway serves these V3 operations even though the Swagger paths still list V2.
+  [usageFees, 'getHsmpElectricityCostInfoV3', '전기료', ['electC', 'electP']],
+  [usageFees, 'getHsmpWaterCostInfoV3', '수도료', ['waterCoolC', 'waterCoolP']],
 ];
 
 const bidSources = {

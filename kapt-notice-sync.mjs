@@ -28,15 +28,16 @@ async function publishNotices(db, run, notices, now) {
   return published;
 }
 
-async function syncSource(db, source, day, key, fetcher, now) {
+async function syncSource(db, source, day, key, fetcher, now, manualRetry) {
   const startedAt = now();
   const token = crypto.randomUUID();
   const { meta } = await db.prepare(`INSERT INTO kapt_notice_sync (source, day, token, retry_at, state)
     VALUES (?, ?, ?, ?, 'running') ON CONFLICT (source) DO UPDATE SET
       day = excluded.day, token = excluded.token, retry_at = excluded.retry_at, state = 'running', published = 0
     WHERE kapt_notice_sync.day < excluded.day OR
-      (kapt_notice_sync.day = excluded.day AND kapt_notice_sync.state <> 'ok' AND kapt_notice_sync.retry_at <= ?)`)
-    .bind(source, day, token, startedAt + leaseMs, startedAt).run();
+      (kapt_notice_sync.day = excluded.day AND kapt_notice_sync.state <> 'ok' AND
+        (kapt_notice_sync.retry_at <= ? OR (? = 1 AND kapt_notice_sync.state <> 'running')))`)
+    .bind(source, day, token, startedAt + leaseMs, startedAt, Number(manualRetry)).run();
   if (!meta.changes) {
     const previous = await db.prepare('SELECT state, published FROM kapt_notice_sync WHERE source = ? AND day = ?').bind(source, day).first();
     return { source, ...(previous ?? { state: 'superseded', published: 0 }) };
@@ -69,8 +70,10 @@ function decodeKey(value) {
 
 export async function syncKaptNotices(request, env, { fetcher = fetch, keyFetcher = fetch, now = Date.now } = {}) {
   if (request.method !== 'POST') return noticeUnsupported('POST');
+  let event;
   try {
-    if (!await authorizeKaptSync(request, keyFetcher, now())) return noticeFailure('sync_access_denied', 401);
+    event = await authorizeKaptSync(request, keyFetcher, now());
+    if (!event) return noticeFailure('sync_access_denied', 401);
   } catch {
     return noticeFailure('sync_auth_unavailable', 503);
   }
@@ -78,7 +81,7 @@ export async function syncKaptNotices(request, env, { fetcher = fetch, keyFetche
   const day = kaptSeoulDay(now());
   const key = decodeKey(env.DATA_GO_KR_KEY?.trim() ?? '');
   if (!key) return noticeJson({ day, sources: sources.map(source => ({ source, state: 'key_unconfigured', published: 0 })) });
-  const results = await Promise.allSettled(sources.map(source => syncSource(env.DB, source, day, key, fetcher, now)));
+  const results = await Promise.allSettled(sources.map(source => syncSource(env.DB, source, day, key, fetcher, now, event === 'workflow_dispatch')));
   if (results.some(result => result.status === 'rejected')) return noticeFailure('notice_store_unavailable', 503);
   return noticeJson({ day, sources: results.map(result => result.value) });
 }
