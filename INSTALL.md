@@ -48,6 +48,15 @@ Sites는 `.openai/hosting.json`에 선언된 D1 `DB`에 글과 계정을, R2 `NO
 
 로컬 글과 계정은 `.local/apartment-notices.sqlite`에, 사진은 `.local/notice-photos/`에 저장한다.
 
+### K-apt 공지 자동 게시
+
+**Refresh K-apt apartment notices**는 매일 오전 9시 41분(한국 시간)에 Sites에 갱신을 요청한다. 한사랑2차삼성아파트의 최근 3개월분 중 가장 최근에 공개된 관리비 5개 항목과 최근 30일 기준 입찰공고·결과를 확인한다. 게시된 글은 D1에 저장한다. 운영자가 삭제한 글은 같은 자료가 다시 조회돼도 올라오지 않는다.
+
+1. 날씨에 사용하는 `DATA_GO_KR_KEY`를 발급한 계정에서 [공용관리비](https://www.data.go.kr/data/15057937/openapi.do), [개별사용료](https://www.data.go.kr/data/15059469/openapi.do), [입찰공고](https://www.data.go.kr/data/15058166/openapi.do), [입찰결과](https://www.data.go.kr/data/15059177/openapi.do)의 활용 승인을 받는다.
+2. Sites를 배포하고 워크플로가 GitHub 기본 브랜치에 반영되면 Actions에서 **Run workflow**로 첫 수집을 확인한다. `api_access_denied`가 표시되면 해당 API의 활용 승인을 확인한다.
+
+Sites는 `main`의 이 워크플로에 GitHub가 발급한 단기 인증 토큰으로 갱신 요청을 검증한다. 실행을 위해 별도 토큰을 저장할 필요는 없다.
+
 ## API 키 준비
 
 로컬에서 실제 API를 쓸 때만 루트에 `.env`를 만들고 [`.env.example`](.env.example)의 이름으로 값을 설정한다. `npm start`가 시작할 때 이 파일을 읽으므로 수정 후 서버를 다시 시작한다. 운영 배포에서는 같은 변수 이름을 ChatGPT Sites의 서버 환경에 별도로 등록한다.

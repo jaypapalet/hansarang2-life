@@ -10,7 +10,7 @@
     "type-check": "tsc --noEmit",
     "build": "npm run type-check && vite build && node build.mjs",
     "start": "node --env-file-if-exists=.env local.mjs",
-    "test": "node --test roads.test.mjs neighborhood.test.mjs apartment-notices.test.mjs notice-accounts.test.mjs transit.test.mjs weather.test.mjs",
+    "test": "node --test roads.test.mjs neighborhood.test.mjs apartment-notices.test.mjs notice-accounts.test.mjs transit.test.mjs weather.test.mjs kapt-notice-sync.test.mjs",
     "update-road-times": "node scripts/update-road-times.mjs"
   },
   "dependencies": {

@@ -36,6 +36,13 @@
       "when": 1795651200000,
       "tag": "0004_weather_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1795757500000,
+      "tag": "0005_kapt_notices",
+      "breakpoints": true
     }
   ]
 }

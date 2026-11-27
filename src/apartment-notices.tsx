@@ -4,7 +4,7 @@ import { boardApi, NoticeError, noticeRequest } from './notice-client';
 import { maxOriginalPhotoBytes, noticePhotoTypes, prepareNoticePhoto } from './notice-image';
 import './apartment-notices.css';
 
-type Notice = { id: number; title: string; body: string; createdAt: number; photoUrl: string | null };
+type Notice = { id: number; title: string; body: string; createdAt: number; photoUrl: string | null; sourceUrl?: string };
 type ManagedNotice = Notice & { revision: number };
 type NoticePage<T> = { posts: T[]; hasNext: boolean };
 type Draft = { title: string; body: string };
@@ -76,6 +76,7 @@ export function ApartmentNotices() {
           <summary><span className="notice-summary"><span>{post.title}</span><NoticeDate value={post.createdAt} /></span></summary>
           <p className="notice-body">{post.body}</p>
           {post.photoUrl && <img className="notice-photo" src={post.photoUrl} alt={`${post.title} 첨부 사진`} loading="lazy" />}
+          {post.sourceUrl && <a className="notice-source" href={post.sourceUrl} target="_blank" rel="noopener noreferrer">K-apt에서 확인 (새 탭)</a>}
         </details>
       </li>)}
     </ul>}
