@@ -36,7 +36,7 @@ async function readKapt(fetcher, key, service, operation, params) {
   const url = new URL(`${service}/${operation}`, apiRoot);
   for (const [name, value] of Object.entries({ serviceKey: key, kaptCode, ...params })) url.searchParams.set(name, value);
   const response = await fetcher(url, {
-    headers: { Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(apiTimeoutMs),
+    headers: { Accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(apiTimeoutMs),
   });
   if ([401, 403].includes(response.status)) throw new KaptSourceError('api_access_denied');
   if (!response.ok) throw new KaptSourceError('upstream_unavailable');

@@ -38,7 +38,7 @@ function authorized(timestamp, overrides = {}, keyId = jwk.kid, badSignature = f
 
 function keyFetcher(url, options) {
   assert.equal(url, `${issuer}/.well-known/jwks`);
-  assert.equal(options.redirect, 'error');
+  assert.equal(options.redirect, 'manual');
   return Response.json({ keys: [jwk] });
 }
 
@@ -128,7 +128,8 @@ test('K-apt posts share the notice board, deduplicate across days and stay delet
 
 test('incomplete fees, over-limit pages and unapproved APIs never publish misleading notices', async t => {
   const env = environment(t);
-  const result = await syncOn(env, time, async url => {
+  const result = await syncOn(env, time, async (url, options) => {
+    assert.equal(options.redirect, 'manual');
     if (url.pathname.includes('WaterCost')) return reply({ item: { kaptCode, waterCoolC: 0 } });
     if (url.pathname.includes('BidPblAnc')) return reply({ totalCount: '501', items: [bid()] });
     if (url.pathname.includes('BidResult')) return Response.json({ OpenAPI_ServiceResponse: { cmmMsgHeader: { returnReasonCode: '30' } } });
@@ -137,6 +138,20 @@ test('incomplete fees, over-limit pages and unapproved APIs never publish mislea
   assert.deepEqual(result.sources.map(row => row.state), ['incomplete_data', 'incomplete_data', 'api_access_denied']);
   assert.equal((await (await apartmentNotices(board, env)).json()).posts.length, 0);
   assert.deepEqual((await syncOn(env, time + 16 * 60_000)).sources.map(row => row.published), [1, 1, 1]);
+});
+
+test('the collector stops at a redirect without forwarding its credentials', async t => {
+  const env = environment(t);
+  let calls = 0;
+  const result = await syncOn(env, time, async (url, options) => {
+    assert.equal(url.origin, 'https://apis.data.go.kr');
+    assert.equal(options.redirect, 'manual');
+    calls++;
+    return Response.redirect('https://other.example/');
+  });
+  assert.equal(calls, 7);
+  assert.deepEqual(result.sources.map(row => row.state), Array(3).fill('upstream_unavailable'));
+  assert.deepEqual((await (await apartmentNotices(board, env)).json()).posts, []);
 });
 
 test('a lost sync lease leaves neither a board row nor a publication record', async t => {
